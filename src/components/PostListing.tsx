@@ -2,8 +2,8 @@
 
 import React, { useState, useRef } from "react";
 import { MattressListing, MattressSize, MattressMaterial, MattressCondition, DeliveryType } from "../types";
-import { Camera, Plus, MapPin, Search, Check, Sparkles } from "lucide-react";
-import { uploadImage } from "@/utils/upload";
+import { Camera, Plus, MapPin, Search, Check, Sparkles, Loader2, AlertCircle, X } from "lucide-react";
+import { uploadMultipleImages, validateFiles, UploadProgress, MAX_IMAGE_COUNT } from "@/utils/upload";
 
 interface PostListingProps {
   onPublish: (newListing: MattressListing) => void;
@@ -30,6 +30,9 @@ export default function PostListing({ onPublish, currentCity }: PostListingProps
   const [phone, setPhone] = useState("");
 
   const [uploadedImages, setUploadedImages] = useState<string[]>([]);
+  const [uploadProgress, setUploadProgress] = useState<UploadProgress[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
 
   const stockImages = [
@@ -43,16 +46,58 @@ export default function PostListing({ onPublish, currentCity }: PostListingProps
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
-    if (files && files.length > 0) {
-      const uploadPromises = Array.from(files).map((file) => uploadImage(file));
-      try {
-        const urls = await Promise.all(uploadPromises);
-        setUploadedImages((prev) => [...prev, ...urls].slice(0, 5));
-      } catch (err) {
-        alert("部分图片上传失败，请重新尝试");
-        console.error("图片上传失败:", err);
+    if (!files || files.length === 0) return;
+
+    setUploadError(null);
+    setUploadProgress([]);
+
+    const remainingSlots = MAX_IMAGE_COUNT - uploadedImages.length;
+    if (remainingSlots <= 0) {
+      setUploadError(`最多上传 ${MAX_IMAGE_COUNT} 张图片`);
+      return;
+    }
+
+    const filesToUpload = Array.from(files).slice(0, remainingSlots);
+    if (files.length > remainingSlots) {
+      setUploadError(`已达上限，仅上传前 ${remainingSlots} 张`);
+    }
+
+    const validationError = validateFiles(filesToUpload);
+    if (validationError) {
+      setUploadError(validationError);
+      return;
+    }
+
+    setIsUploading(true);
+
+    try {
+      const urls = await uploadMultipleImages(filesToUpload, (progress) => {
+        setUploadProgress((prev) => {
+          const existing = prev.findIndex((p) => p.fileIndex === progress.fileIndex);
+          if (existing >= 0) {
+            const updated = [...prev];
+            updated[existing] = progress;
+            return updated;
+          }
+          return [...prev, progress];
+        });
+      });
+
+      setUploadedImages((prev) => [...prev, ...urls].slice(0, MAX_IMAGE_COUNT));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "图片上传失败，请重新尝试";
+      setUploadError(message);
+      console.error("图片上传失败:", err);
+    } finally {
+      setIsUploading(false);
+      if (imageInputRef.current) {
+        imageInputRef.current.value = "";
       }
     }
+  };
+
+  const removeImage = (index: number) => {
+    setUploadedImages((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -145,42 +190,86 @@ export default function PostListing({ onPublish, currentCity }: PostListingProps
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div
-              onClick={() => imageInputRef.current?.click()}
-              className="col-span-2 row-span-2 aspect-square rounded-2xl bg-gray-50 border-2 border-dashed border-gray-200 hover:border-black transition-all cursor-pointer flex flex-col items-center justify-center relative overflow-hidden group select-none"
+              onClick={() => !isUploading && uploadedImages.length < MAX_IMAGE_COUNT && imageInputRef.current?.click()}
+              className={`col-span-2 row-span-2 aspect-square rounded-2xl bg-gray-50 border-2 border-dashed border-gray-200 hover:border-black transition-all cursor-pointer flex flex-col items-center justify-center relative overflow-hidden group select-none ${isUploading ? "pointer-events-none opacity-70" : ""}`}
             >
               {uploadedImages[0] ? (
-                <img
-                  src={uploadedImages[0]}
-                  alt="Cover"
-                  className="w-full h-full object-cover"
-                  referrerPolicy="no-referrer"
-                />
+                <>
+                  <img
+                    src={uploadedImages[0]}
+                    alt="Cover"
+                    className="w-full h-full object-cover"
+                    referrerPolicy="no-referrer"
+                  />
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeImage(0);
+                    }}
+                    className="absolute top-2 right-2 w-7 h-7 bg-black/60 hover:bg-black/80 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer border-0"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </>
               ) : (
                 <div className="p-6 text-center flex flex-col items-center justify-center">
-                  <Camera className="w-10 h-10 text-gray-400 group-hover:text-black transition-colors mb-2" />
-                  <span className="block text-[13px] font-semibold text-gray-700 group-hover:text-black transition-colors mb-0.5">
-                    Cover Photo
-                  </span>
-                  <span className="block text-[12px] text-gray-400">点此上传封面图 / 首图</span>
+                  {isUploading && uploadProgress.length > 0 ? (
+                    <>
+                      <Loader2 className="w-10 h-10 text-black animate-spin mb-2" />
+                      <span className="block text-[13px] font-semibold text-black mb-0.5">
+                        上传中...
+                      </span>
+                      <span className="block text-[12px] text-gray-400">
+                        {uploadProgress[uploadProgress.length - 1]?.progress || 0}%
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <Camera className="w-10 h-10 text-gray-400 group-hover:text-black transition-colors mb-2" />
+                      <span className="block text-[13px] font-semibold text-gray-700 group-hover:text-black transition-colors mb-0.5">
+                        Cover Photo
+                      </span>
+                      <span className="block text-[12px] text-gray-400">点此上传封面图 / 首图</span>
+                    </>
+                  )}
                 </div>
               )}
             </div>
 
             {[1, 2, 3, 4].map((slotIdx) => {
               const image = uploadedImages[slotIdx];
+              const currentProgress = uploadProgress.find((p) => p.fileIndex === slotIdx);
               return (
                 <div
                   key={slotIdx}
-                  onClick={() => imageInputRef.current?.click()}
-                  className="aspect-square rounded-2xl bg-gray-50 border-2 border-dashed border-gray-200 hover:border-black transition-all cursor-pointer flex items-center justify-center relative overflow-hidden group select-none"
+                  onClick={() => !isUploading && uploadedImages.length < MAX_IMAGE_COUNT && imageInputRef.current?.click()}
+                  className={`aspect-square rounded-2xl bg-gray-50 border-2 border-dashed border-gray-200 hover:border-black transition-all cursor-pointer flex items-center justify-center relative overflow-hidden group select-none ${isUploading ? "pointer-events-none opacity-70" : ""}`}
                 >
                   {image ? (
-                    <img
-                      src={image}
-                      alt={`Detail ${slotIdx}`}
-                      className="w-full h-full object-cover"
-                      referrerPolicy="no-referrer"
-                    />
+                    <>
+                      <img
+                        src={image}
+                        alt={`Detail ${slotIdx}`}
+                        className="w-full h-full object-cover"
+                        referrerPolicy="no-referrer"
+                      />
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeImage(slotIdx);
+                        }}
+                        className="absolute top-1 right-1 w-6 h-6 bg-black/60 hover:bg-black/80 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer border-0"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </>
+                  ) : currentProgress && currentProgress.status === "uploading" ? (
+                    <div className="flex flex-col items-center">
+                      <Loader2 className="w-6 h-6 text-black animate-spin" />
+                      <span className="text-[11px] text-gray-500 mt-1">{currentProgress.progress}%</span>
+                    </div>
                   ) : (
                     <Plus className="w-6 h-6 text-gray-400 group-hover:text-black transition-all" />
                   )}
@@ -189,12 +278,31 @@ export default function PostListing({ onPublish, currentCity }: PostListingProps
             })}
           </div>
 
+          {uploadError && (
+            <div className="flex items-center gap-2 text-rose-600 bg-rose-50 px-4 py-2.5 rounded-lg border border-rose-100">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              <span className="text-[13px] font-medium">{uploadError}</span>
+              <button
+                type="button"
+                onClick={() => setUploadError(null)}
+                className="ml-auto text-rose-400 hover:text-rose-600 cursor-pointer border-0 bg-transparent p-0"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
+          <p className="text-[12px] text-gray-400 font-medium">
+            支持 JPG/PNG/WebP/GIF 格式，每张不超过 5MB，最多 {MAX_IMAGE_COUNT} 张
+          </p>
+
           <input
             ref={imageInputRef}
             type="file"
-            accept="image/*"
+            accept="image/jpeg,image/png,image/webp,image/gif"
             multiple
             onChange={handleImageUpload}
+            disabled={isUploading || uploadedImages.length >= MAX_IMAGE_COUNT}
             className="hidden"
           />
         </div>

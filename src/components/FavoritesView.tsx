@@ -105,6 +105,8 @@ export default function FavoritesView({
                     alt={item.title}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-in-out"
                     referrerPolicy="no-referrer"
+                    loading="lazy"
+                    decoding="async"
                   />
 
                   <button

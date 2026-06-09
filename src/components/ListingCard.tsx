@@ -27,6 +27,8 @@ export default function ListingCard({
           alt={listing.title}
           className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-105"
           referrerPolicy="no-referrer"
+          loading="lazy"
+          decoding="async"
         />
 
         {/* 左上角状态徽章 */}
