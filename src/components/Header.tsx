@@ -4,6 +4,7 @@ import React, { Suspense } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { MapPin, Plus, Bell, User } from "lucide-react";
+import { getCityName } from "@/config/cities";
 
 interface HeaderProps {
   currentCity: string;
@@ -22,17 +23,8 @@ function HeaderContent({
   const searchParams = useSearchParams();
   const tab = searchParams.get("tab");
 
-  const cityNamesZh: { [key: string]: string } = {
-    Hangzhou: "杭州",
-    Beijing: "北京",
-    Shanghai: "上海",
-    Shenzhen: "深圳",
-    Chengdu: "成都",
-    Guangzhou: "广州",
-    Wuhan: "武汉",
-  };
-
-  const cityZh = cityNamesZh[currentCity] || currentCity;
+  const citySlug = currentCity.toLowerCase();
+  const cityZh = getCityName(citySlug) !== "未知城市" ? getCityName(citySlug) : currentCity;
 
   // 高亮状态判定
   const isFavoritesActive = pathname === "/me" && tab === "favorites";
