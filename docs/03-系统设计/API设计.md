@@ -6,6 +6,21 @@
 
 **认证方式**：基于 `device_id` Cookie 的设备认证，无需用户登录。
 
+### 端点列表
+
+| 端点 | 方法 | 功能 | 状态 |
+|------|------|------|------|
+| `/api/favorites` | GET | 获取收藏列表 | ✅ |
+| `/api/favorites` | POST | 添加收藏 | ✅ |
+| `/api/favorites` | DELETE | 取消收藏 | ✅ |
+| `/api/locate` | GET | IP 定位获取城市 | ✅ |
+| `/api/notifications` | GET | 获取通知列表 | ✅ |
+| `/api/notifications` | POST | 创建通知 | ✅ |
+| `/api/notifications` | PATCH | 更新通知 | ✅ |
+| `/api/notifications` | DELETE | 删除通知 | ✅ |
+| `/api/listings` | PATCH | 更新商品价格 | ✅ |
+| `/api/listings/[id]/contact` | GET | 获取卖家联系方式 | ⚠️ 前端调用但后端未实现 |
+
 ---
 
 ## 1. 收藏管理 API
@@ -289,11 +304,53 @@
 
 ---
 
-## 4. Server Actions
+## 4. 商品管理 API
+
+**端点**：`/api/listings`
+
+### 4.1 更新商品价格
+
+**方法**：`PATCH`
+
+**描述**：更新商品价格（仅卖家本人可操作）。
+
+**请求体**：
+
+```json
+{
+  "id": "uuid",
+  "price": 2900
+}
+```
+
+**响应**：
+
+```json
+{
+  "success": true
+}
+```
+
+**错误响应**：
+
+| 状态码 | 错误信息 | 说明 |
+|--------|----------|------|
+| 400 | Missing id or price | 缺少必要参数 |
+| 403 | Forbidden: not the listing owner | 非商品所有者 |
+| 503 | Supabase not configured | 数据库未配置 |
+| 500 | Database connection failed | 数据库连接失败 |
+
+**权限校验**：
+1. 查询 `sellerDeviceId` 与 cookie `device_id` 比对
+2. 不匹配时返回 403
+
+---
+
+## 5. Server Actions
 
 **文件**：`src/app/actions.ts`
 
-### 4.1 publishListing
+### 5.1 publishListing
 
 **描述**：发布新的商品列表。
 
@@ -342,7 +399,7 @@ interface MattressListing {
 |-------------|------|
 | 400 | 请求参数错误 |
 | 401 | 未认证（缺少 device_id） |
-| 403 | 权限不足（设备 ID 不匹配） |
+| 403 | 权限不足（设备 ID 不匹配/非商品所有者） |
 | 500 | 服务器内部错误 |
 | 503 | 服务不可用（Supabase 未配置） |
 
@@ -354,10 +411,11 @@ interface MattressListing {
 
 | 操作 | 超时时间 |
 |------|----------|
-| 收藏查询 | 8 秒 |
-| 通知查询 | 8 秒 |
+| 收藏查询/写入 | 8 秒 |
+| 通知查询/写入 | 8 秒 |
 | 商品查询 | 5 秒 |
-| 数据写入 | 8 秒 |
+| 商品更新（降价） | 8 秒 |
+| 数据写入（publishListing） | 8 秒 |
 | IP 定位 | 5 秒（重试 1 次） |
 
 ---
