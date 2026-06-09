@@ -1,0 +1,6 @@
+{
+  "name": "Mattress Marketplace",
+  "description": "一个注重卫生的二手高端床垫循环流转与发布展示平台，支持地理搜索，价格筛选，微信号直接联络等功能。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
