@@ -20,6 +20,12 @@
 .DS_Store
 *.pem
 
+# claude ai local config
+.claude/
+
+# obsidian local config
+docs/.obsidian/
+
 # debug
 npm-debug.log*
 yarn-debug.log*
