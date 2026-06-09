@@ -31,6 +31,8 @@ export interface MattressListing {
   wechatId: string;
   phone?: string;
   createdAt: string;
+  isActive?: boolean;
+  updatedAt?: string;
 }
 
 export interface NotificationItem {

@@ -9,6 +9,7 @@ import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import FavoritesView from "@/components/FavoritesView";
 import MessagesView from "@/components/MessagesView";
+import MyListingsView from "@/components/MyListingsView";
 import CityChooseModal from "@/components/CityChooseModal";
 
 function MeProfileContent() {
@@ -109,6 +110,19 @@ function MeProfileContent() {
           </button>
           <button
             onClick={() => {
+              setActiveTab("mylistings");
+              router.push("/me?tab=mylistings");
+            }}
+            className={`pb-3 text-sm font-semibold tracking-wide transition-all border-b-2 cursor-pointer bg-transparent border-0 ${
+              activeTab === "mylistings"
+                ? "border-black text-black"
+                : "border-transparent text-gray-400 hover:text-black"
+            }`}
+          >
+            我的发布
+          </button>
+          <button
+            onClick={() => {
               setActiveTab("messages");
               router.push("/me?tab=messages");
             }}
@@ -133,6 +147,10 @@ function MeProfileContent() {
             onCardClick={(id) => router.push(`/listing/${id}`)}
             onExploreMore={() => router.push(`/${currentCity.toLowerCase()}`)}
             isLoading={isLoadingFavorites}
+          />
+        ) : activeTab === "mylistings" ? (
+          <MyListingsView
+            onCardClick={(id) => router.push(`/listing/${id}`)}
           />
         ) : (
           <MessagesView

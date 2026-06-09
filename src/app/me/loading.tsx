@@ -5,6 +5,7 @@ export default function MeLoading() {
         <div className="max-w-[1200px] mx-auto px-4 md:px-6 mb-8 flex justify-center gap-6 border-b border-gray-100">
           <div className="h-5 w-28 bg-gray-100 rounded animate-pulse pb-3" />
           <div className="h-5 w-28 bg-gray-100 rounded animate-pulse pb-3" />
+          <div className="h-5 w-28 bg-gray-100 rounded animate-pulse pb-3" />
         </div>
 
         <div className="max-w-[1200px] mx-auto px-4 md:px-6">

@@ -82,3 +82,96 @@ export async function publishListing(newListing: MattressListing) {
   
   return { success: true };
 }
+
+export async function updateListing(id: string, updates: Partial<MattressListing>) {
+  const configured = isSupabaseConfigured();
+  const cookieStore = cookies();
+  const deviceId = cookieStore.get("device_id")?.value || null;
+
+  if (configured) {
+    try {
+      const supabase = createClient(deviceId || undefined);
+
+      const { data: listing, error: fetchError } = await withTimeout(
+        supabase.from("listings").select("sellerDeviceId").eq("id", id).maybeSingle(),
+        SUPABASE_TIMEOUT_MS
+      );
+
+      if (fetchError) {
+        return { success: false, error: fetchError.message };
+      }
+
+      if (listing && listing.sellerDeviceId && listing.sellerDeviceId !== deviceId) {
+        return { success: false, error: "Forbidden: not the listing owner" };
+      }
+
+      const dbUpdates: Record<string, unknown> = { updatedAt: new Date().toISOString() };
+      if (updates.price !== undefined) dbUpdates.price = updates.price;
+      if (updates.description !== undefined) dbUpdates.description = updates.description;
+      if (updates.images !== undefined) dbUpdates.images = updates.images;
+      if (updates.wechatId !== undefined) dbUpdates.wechatId = updates.wechatId;
+      if (updates.phone !== undefined) dbUpdates.phone = updates.phone;
+      if (updates.isActive !== undefined) dbUpdates.isActive = updates.isActive;
+      if (updates.title !== undefined) dbUpdates.title = updates.title;
+
+      const { error } = await withTimeout(
+        supabase.from("listings").update(dbUpdates).eq("id", id),
+        SUPABASE_TIMEOUT_MS
+      );
+
+      if (error) {
+        return { success: false, error: error.message };
+      }
+    } catch (err) {
+      console.error("更新商品失败:", err);
+      return { success: false, error: "Database connection failed" };
+    }
+  }
+
+  revalidatePath("/me");
+  return { success: true };
+}
+
+export async function deleteListing(id: string) {
+  const configured = isSupabaseConfigured();
+  const cookieStore = cookies();
+  const deviceId = cookieStore.get("device_id")?.value || null;
+
+  if (configured) {
+    try {
+      const supabase = createClient(deviceId || undefined);
+
+      const { data: listing, error: fetchError } = await withTimeout(
+        supabase.from("listings").select("sellerDeviceId, city").eq("id", id).maybeSingle(),
+        SUPABASE_TIMEOUT_MS
+      );
+
+      if (fetchError) {
+        return { success: false, error: fetchError.message };
+      }
+
+      if (listing && listing.sellerDeviceId && listing.sellerDeviceId !== deviceId) {
+        return { success: false, error: "Forbidden: not the listing owner" };
+      }
+
+      const { error } = await withTimeout(
+        supabase.from("listings").delete().eq("id", id),
+        SUPABASE_TIMEOUT_MS
+      );
+
+      if (error) {
+        return { success: false, error: error.message };
+      }
+
+      if (listing?.city) {
+        revalidatePath(`/${listing.city.toLowerCase()}`);
+      }
+    } catch (err) {
+      console.error("删除商品失败:", err);
+      return { success: false, error: "Database connection failed" };
+    }
+  }
+
+  revalidatePath("/me");
+  return { success: true };
+}

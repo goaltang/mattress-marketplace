@@ -39,7 +39,9 @@ CREATE TABLE IF NOT EXISTS public.listings (
     "sellerDeviceId" TEXT,
     "wechatId" TEXT NOT NULL,
     phone TEXT,
-    "createdAt" TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+    "createdAt" TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    "isActive" BOOLEAN DEFAULT true,
+    "updatedAt" TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
 CREATE INDEX IF NOT EXISTS idx_listings_seller_device_id ON public.listings("sellerDeviceId");
@@ -56,6 +58,11 @@ CREATE POLICY "Only listing owner can update" ON public.listings
     FOR UPDATE USING (
         "sellerDeviceId" = public.get_device_id()
         OR "sellerDeviceId" IS NULL
+    );
+
+CREATE POLICY "Only listing owner can delete" ON public.listings
+    FOR DELETE USING (
+        "sellerDeviceId" = public.get_device_id()
     );
 
 

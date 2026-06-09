@@ -17,6 +17,46 @@ async function withTimeout(promiseLike: any, ms: number): Promise<any> {
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
+export async function GET(request: NextRequest) {
+  const cookieDeviceId = getDeviceIdFromCookie(request);
+
+  if (!cookieDeviceId) {
+    return NextResponse.json({ success: true, listings: [] });
+  }
+
+  const configured = isSupabaseConfigured();
+
+  if (configured) {
+    try {
+      const supabase = createClient(cookieDeviceId);
+      const { data, error } = await withTimeout(
+        supabase
+          .from("listings")
+          .select("*")
+          .eq("sellerDeviceId", cookieDeviceId)
+          .order("createdAt", { ascending: false }),
+        SUPABASE_TIMEOUT_MS
+      );
+
+      if (!error && data) {
+        const listings = data.map((row: Record<string, unknown>) => ({
+          ...row,
+          sellerDeviceId: row.sellerDeviceId || row.seller_device_id || undefined,
+        }));
+        return NextResponse.json({ success: true, listings });
+      }
+
+      if (error) {
+        console.error("查询卖家商品出错:", error.message);
+      }
+    } catch (err) {
+      console.error("连接 Supabase 失败:", err);
+    }
+  }
+
+  return NextResponse.json({ success: true, listings: [] });
+}
+
 export async function PATCH(request: NextRequest) {
   const configured = isSupabaseConfigured();
   if (!configured) {
