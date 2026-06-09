@@ -46,6 +46,8 @@ export async function getListings(city?: string): Promise<MattressListing[]> {
         query = query.ilike("city", city);
       }
 
+      query = query.or('"isActive".is.null,"isActive".eq.true');
+
       const { data, error } = await withTimeout(
         query.order("createdAt", { ascending: false }),
         SUPABASE_TIMEOUT_MS
@@ -54,6 +56,8 @@ export async function getListings(city?: string): Promise<MattressListing[]> {
       if (!error && data && data.length > 0) {
         return data.map((row: Record<string, unknown>) => ({
           ...row,
+          wechatId: "",
+          phone: undefined,
           sellerDeviceId: row.sellerDeviceId || row.seller_device_id || undefined,
         })) as MattressListing[];
       }
@@ -67,7 +71,11 @@ export async function getListings(city?: string): Promise<MattressListing[]> {
   }
 
   // 降级 Fallback：使用本地默认 mock 数据
-  let list = DEFAULT_LISTINGS;
+  let list = DEFAULT_LISTINGS.map((item) => ({
+    ...item,
+    wechatId: "",
+    phone: undefined,
+  }));
   if (city) {
     list = list.filter((item) => item.city.toLowerCase() === city.toLowerCase());
   }
@@ -93,7 +101,12 @@ export async function getListingById(id: string): Promise<MattressListing | null
       );
 
       if (!error && data) {
-        return { ...data, sellerDeviceId: data.sellerDeviceId || data.seller_device_id || undefined } as MattressListing;
+        return { 
+          ...data, 
+          wechatId: "",
+          phone: undefined,
+          sellerDeviceId: data.sellerDeviceId || data.seller_device_id || undefined 
+        } as MattressListing;
       }
 
       if (error) {
@@ -106,5 +119,8 @@ export async function getListingById(id: string): Promise<MattressListing | null
 
   // 降级 Fallback：从本地数据源匹配
   const found = DEFAULT_LISTINGS.find((item) => item.id === id);
-  return found || null;
+  if (found) {
+    return { ...found, wechatId: "", phone: undefined };
+  }
+  return null;
 }
