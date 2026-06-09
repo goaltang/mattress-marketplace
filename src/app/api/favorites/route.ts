@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
 import { isSupabaseConfigured } from "@/utils/db";
+import { getDeviceIdFromCookie } from "@/utils/auth";
 
 const SUPABASE_TIMEOUT_MS = 8000;
 
@@ -27,13 +28,16 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: false, error: "Supabase not configured" }, { status: 503 });
   }
 
-  const deviceId = request.nextUrl.searchParams.get("device_id");
+  const cookieDeviceId = getDeviceIdFromCookie(request);
+  const queryDeviceId = request.nextUrl.searchParams.get("device_id");
+  const deviceId = queryDeviceId || cookieDeviceId;
+
   if (!deviceId) {
     return NextResponse.json({ success: false, error: "Missing device_id" }, { status: 400 });
   }
 
   try {
-    const supabase = createClient();
+    const supabase = createClient(cookieDeviceId || undefined);
     const { data, error } = await withTimeout(
       supabase
         .from("favorites")
@@ -66,20 +70,31 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: "Supabase not configured" }, { status: 503 });
   }
 
+  const cookieDeviceId = getDeviceIdFromCookie(request);
+
   try {
     const body = await request.json();
     const { device_id, listing_id } = body;
 
-    if (!device_id || !listing_id) {
+    if (!listing_id) {
       return NextResponse.json(
-        { success: false, error: "Missing device_id or listing_id" },
+        { success: false, error: "Missing listing_id" },
         { status: 400 }
       );
     }
 
-    const supabase = createClient();
+    const targetDeviceId = device_id || cookieDeviceId;
+    if (!targetDeviceId) {
+      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    }
+
+    if (device_id && cookieDeviceId && device_id !== cookieDeviceId) {
+      return NextResponse.json({ success: false, error: "Forbidden: device_id mismatch" }, { status: 403 });
+    }
+
+    const supabase = createClient(cookieDeviceId || undefined);
     const { error } = await withTimeout(
-      supabase.from("favorites").insert([{ device_id, listing_id }]),
+      supabase.from("favorites").insert([{ device_id: targetDeviceId, listing_id }]),
       SUPABASE_TIMEOUT_MS
     );
 
@@ -104,23 +119,34 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ success: false, error: "Supabase not configured" }, { status: 503 });
   }
 
+  const cookieDeviceId = getDeviceIdFromCookie(request);
+
   try {
     const body = await request.json();
     const { device_id, listing_id } = body;
 
-    if (!device_id || !listing_id) {
+    if (!listing_id) {
       return NextResponse.json(
-        { success: false, error: "Missing device_id or listing_id" },
+        { success: false, error: "Missing listing_id" },
         { status: 400 }
       );
     }
 
-    const supabase = createClient();
+    const targetDeviceId = device_id || cookieDeviceId;
+    if (!targetDeviceId) {
+      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    }
+
+    if (device_id && cookieDeviceId && device_id !== cookieDeviceId) {
+      return NextResponse.json({ success: false, error: "Forbidden: device_id mismatch" }, { status: 403 });
+    }
+
+    const supabase = createClient(cookieDeviceId || undefined);
     const { error } = await withTimeout(
       supabase
         .from("favorites")
         .delete()
-        .eq("device_id", device_id)
+        .eq("device_id", targetDeviceId)
         .eq("listing_id", listing_id),
       SUPABASE_TIMEOUT_MS
     );

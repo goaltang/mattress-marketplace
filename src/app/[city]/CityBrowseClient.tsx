@@ -32,17 +32,35 @@ export default function CityBrowseClient({ citySlug, initialListings }: CityBrow
     changeCity,
   } = useAppContext();
 
-  // 城市展示大写名称
   const cityKey = citySlug.charAt(0).toUpperCase() + citySlug.slice(1).toLowerCase();
 
-  // 搜索和过滤状态
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedSize, setSelectedSize] = useState<MattressSize | "All">("All");
   const [selectedMaterial, setSelectedMaterial] = useState<MattressMaterial | "All">("All");
   const [sortBy, setSortBy] = useState<"default" | "priceAsc" | "priceDesc">("default");
 
-  // 城市选择弹窗
   const [showCityModal, setShowCityModal] = useState(false);
+
+  const [mergedListings, setMergedListings] = useState<MattressListing[]>(initialListings);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("restored_listings_v1");
+      if (stored) {
+        const localListings: MattressListing[] = JSON.parse(stored);
+        const localForCity = localListings.filter(
+          (item) => item.city.toLowerCase() === citySlug.toLowerCase()
+        );
+        if (localForCity.length > 0) {
+          const serverIds = new Set(initialListings.map((l) => l.id));
+          const uniqueLocal = localForCity.filter((l) => !serverIds.has(l.id));
+          if (uniqueLocal.length > 0) {
+            setMergedListings([...uniqueLocal, ...initialListings]);
+          }
+        }
+      }
+    } catch {}
+  }, [initialListings, citySlug]);
 
   // 写入 Cookie 供 Middleware 识别（仅在挂载时运行一次，保持用户城市喜好）
   useEffect(() => {
@@ -58,8 +76,7 @@ export default function CityBrowseClient({ citySlug, initialListings }: CityBrow
 
   // 过滤商品列表 (使用 useMemo)
   const currentListings = useMemo(() => {
-    // 1. 过滤当前城市商品（服务端虽然已经过滤过，但我们在这里双重保证）
-    let list = initialListings.filter(
+    let list = mergedListings.filter(
       (item) => item.city.toLowerCase() === citySlug.toLowerCase()
     );
 
@@ -93,7 +110,7 @@ export default function CityBrowseClient({ citySlug, initialListings }: CityBrow
     }
 
     return list;
-  }, [initialListings, citySlug, searchQuery, selectedSize, selectedMaterial, sortBy]);
+  }, [mergedListings, citySlug, searchQuery, selectedSize, selectedMaterial, sortBy]);
 
   // 切换城市跳转，由全局 Context 统一进行跳转和状态更新
   const handleCityChange = (newCitySlug: string) => {

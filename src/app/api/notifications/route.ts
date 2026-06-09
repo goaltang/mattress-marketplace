@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
 import { isSupabaseConfigured } from "@/utils/db";
+import { getDeviceIdFromCookie } from "@/utils/auth";
 
 const SUPABASE_TIMEOUT_MS = 8000;
 
@@ -22,13 +23,16 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: false, error: "Supabase not configured" }, { status: 503 });
   }
 
-  const deviceId = request.nextUrl.searchParams.get("device_id");
+  const cookieDeviceId = getDeviceIdFromCookie(request);
+  const queryDeviceId = request.nextUrl.searchParams.get("device_id");
+  const deviceId = queryDeviceId || cookieDeviceId;
+
   if (!deviceId) {
     return NextResponse.json({ success: false, error: "Missing device_id" }, { status: 400 });
   }
 
   try {
-    const supabase = createClient();
+    const supabase = createClient(cookieDeviceId || undefined);
     const { data, error } = await withTimeout(
       supabase
         .from("notifications")
@@ -70,6 +74,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: "Supabase not configured" }, { status: 503 });
   }
 
+  const cookieDeviceId = getDeviceIdFromCookie(request);
+
   try {
     const body = await request.json();
     const { device_id, type, title, message, detail_url, action_state, buyer_name, listing_title, listing_id } = body;
@@ -82,7 +88,7 @@ export async function POST(request: NextRequest) {
     }
 
     const id = crypto.randomUUID();
-    const supabase = createClient();
+    const supabase = createClient(cookieDeviceId || undefined);
     const { error } = await withTimeout(
       supabase.from("notifications").insert([{
         id,
@@ -118,22 +124,28 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ success: false, error: "Supabase not configured" }, { status: 503 });
   }
 
+  const cookieDeviceId = getDeviceIdFromCookie(request);
+  if (!cookieDeviceId) {
+    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
     const body = await request.json();
     const { id, device_id, unread, action_state, message } = body;
 
-    if (!device_id) {
-      return NextResponse.json({ success: false, error: "Missing device_id" }, { status: 400 });
+    if (device_id && device_id !== cookieDeviceId) {
+      return NextResponse.json({ success: false, error: "Forbidden: device_id mismatch" }, { status: 403 });
     }
 
-    const supabase = createClient();
+    const targetDeviceId = device_id || cookieDeviceId;
+    const supabase = createClient(cookieDeviceId);
     const updates: Record<string, unknown> = {};
 
     if (unread !== undefined) updates.unread = unread;
     if (action_state !== undefined) updates.action_state = action_state;
     if (message !== undefined) updates.message = message;
 
-    let query = supabase.from("notifications").update(updates).eq("device_id", device_id);
+    let query = supabase.from("notifications").update(updates).eq("device_id", targetDeviceId);
 
     if (id) {
       query = query.eq("id", id);
@@ -161,16 +173,22 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ success: false, error: "Supabase not configured" }, { status: 503 });
   }
 
+  const cookieDeviceId = getDeviceIdFromCookie(request);
+  if (!cookieDeviceId) {
+    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
     const body = await request.json();
     const { id, device_id } = body;
 
-    if (!device_id) {
-      return NextResponse.json({ success: false, error: "Missing device_id" }, { status: 400 });
+    if (device_id && device_id !== cookieDeviceId) {
+      return NextResponse.json({ success: false, error: "Forbidden: device_id mismatch" }, { status: 403 });
     }
 
-    const supabase = createClient();
-    let query = supabase.from("notifications").delete().eq("device_id", device_id);
+    const targetDeviceId = device_id || cookieDeviceId;
+    const supabase = createClient(cookieDeviceId);
+    let query = supabase.from("notifications").delete().eq("device_id", targetDeviceId);
 
     if (id) {
       query = query.eq("id", id);

@@ -52,7 +52,10 @@ export async function getListings(city?: string): Promise<MattressListing[]> {
       );
       
       if (!error && data && data.length > 0) {
-        return data as MattressListing[];
+        return data.map((row: Record<string, unknown>) => ({
+          ...row,
+          sellerDeviceId: row.sellerDeviceId || row.seller_device_id || undefined,
+        })) as MattressListing[];
       }
       
       if (error) {
@@ -90,7 +93,7 @@ export async function getListingById(id: string): Promise<MattressListing | null
       );
 
       if (!error && data) {
-        return data as MattressListing;
+        return { ...data, sellerDeviceId: data.sellerDeviceId || data.seller_device_id || undefined } as MattressListing;
       }
 
       if (error) {

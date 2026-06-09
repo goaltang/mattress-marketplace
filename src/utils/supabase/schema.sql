@@ -3,6 +3,15 @@
 -- 适用版本: Supabase PostgreSQL
 -- =================================================================
 
+-- Helper: 从 PostgREST 请求头中提取 device_id，供 RLS 策略使用
+-- API 路由通过 createClient(deviceId) 传入 x-device-id 自定义头
+CREATE OR REPLACE FUNCTION public.get_device_id()
+RETURNS TEXT
+LANGUAGE sql STABLE
+AS $$
+  SELECT nullif(current_setting('request.headers', true)::json->>'x-device-id', '');
+$$;
+
 -- 1. 创建床垫商品数据表 (listings)
 CREATE TABLE IF NOT EXISTS public.listings (
     id TEXT PRIMARY KEY,
@@ -27,28 +36,30 @@ CREATE TABLE IF NOT EXISTS public.listings (
     "isVerifiedClean" BOOLEAN DEFAULT false,
     "isHygieneVerified" BOOLEAN DEFAULT false,
     "isCleaned" BOOLEAN DEFAULT false,
+    "sellerDeviceId" TEXT,
     "wechatId" TEXT NOT NULL,
     phone TEXT,
     "createdAt" TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 启用行级安全机制 (Row Level Security)
+CREATE INDEX IF NOT EXISTS idx_listings_seller_device_id ON public.listings("sellerDeviceId");
+
 ALTER TABLE public.listings ENABLE ROW LEVEL SECURITY;
 
--- 创建安全策略 1: 允许匿名与登录用户随意读取床垫列表 (用于列表和详情页展示)
 CREATE POLICY "Allow public read access to listings" ON public.listings
     FOR SELECT USING (true);
 
--- 创建安全策略 2: 允许随意插入新记录 (用于未登录用户测试发布，实际生产中可绑定 auth.uid() 仅限已登录用户发布)
-CREATE POLICY "Allow public write access to listings" ON public.listings
+CREATE POLICY "Allow anyone to insert listings" ON public.listings
     FOR INSERT WITH CHECK (true);
 
--- 创建安全策略 3: 允许所有人更新记录 (方便演示降价等逻辑)
-CREATE POLICY "Allow public update access to listings" ON public.listings
-    FOR UPDATE USING (true);
+CREATE POLICY "Only listing owner can update" ON public.listings
+    FOR UPDATE USING (
+        "sellerDeviceId" = public.get_device_id()
+        OR "sellerDeviceId" IS NULL
+    );
 
 
--- 2. 收藏夹关联表 (favorites) - 基于 device_id 实现无需登录的收藏同步
+-- 2. 收藏夹关联表 (favorites)
 CREATE TABLE IF NOT EXISTS public.favorites (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     device_id TEXT NOT NULL,
@@ -62,11 +73,45 @@ CREATE INDEX IF NOT EXISTS idx_favorites_listing_id ON public.favorites(listing_
 
 ALTER TABLE public.favorites ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Allow public read access to favorites" ON public.favorites
-    FOR SELECT USING (true);
+CREATE POLICY "Users can read own favorites" ON public.favorites
+    FOR SELECT USING (device_id = public.get_device_id());
 
-CREATE POLICY "Allow public insert to favorites" ON public.favorites
+CREATE POLICY "Users can insert own favorites" ON public.favorites
+    FOR INSERT WITH CHECK (device_id = public.get_device_id());
+
+CREATE POLICY "Users can delete own favorites" ON public.favorites
+    FOR DELETE USING (device_id = public.get_device_id());
+
+
+-- 3. 通知表 (notifications)
+CREATE TABLE IF NOT EXISTS public.notifications (
+    id TEXT PRIMARY KEY,
+    device_id TEXT NOT NULL,
+    type TEXT NOT NULL,
+    title TEXT NOT NULL,
+    message TEXT NOT NULL,
+    detail_url TEXT,
+    unread BOOLEAN NOT NULL DEFAULT true,
+    action_state TEXT,
+    buyer_name TEXT,
+    listing_title TEXT,
+    listing_id TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_device_id ON public.notifications(device_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_listing_id ON public.notifications(listing_id);
+
+ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can read own notifications" ON public.notifications
+    FOR SELECT USING (device_id = public.get_device_id());
+
+CREATE POLICY "Anyone can insert notifications" ON public.notifications
     FOR INSERT WITH CHECK (true);
 
-CREATE POLICY "Allow public delete favorites" ON public.favorites
-    FOR DELETE USING (true);
+CREATE POLICY "Users can update own notifications" ON public.notifications
+    FOR UPDATE USING (device_id = public.get_device_id());
+
+CREATE POLICY "Users can delete own notifications" ON public.notifications
+    FOR DELETE USING (device_id = public.get_device_id());

@@ -54,6 +54,7 @@ export async function publishListing(newListing: MattressListing) {
           isVerifiedClean: newListing.isVerifiedClean,
           isHygieneVerified: newListing.isHygieneVerified,
           isCleaned: newListing.isCleaned,
+          sellerDeviceId: newListing.sellerDeviceId || null,
           wechatId: newListing.wechatId,
           phone: newListing.phone,
           createdAt: newListing.createdAt,

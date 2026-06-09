@@ -51,11 +51,18 @@ export default function ListingDetail({
     }
 
     try {
+      const targetDeviceId = listing.sellerDeviceId;
+      if (!targetDeviceId) {
+        setContactSent(true);
+        setShowContactModal(false);
+        return;
+      }
+
       await fetch("/api/notifications", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          device_id: deviceId,
+          device_id: targetDeviceId,
           type: "contact_request",
           title: "新买家联络申请",
           message: `买家 ${buyerName} 对「${listing.title}」感兴趣，请求获取您的联系方式。`,

@@ -27,6 +27,12 @@ const FAVORITES_KEY = "restored_favorites_v1";
 
 function getOrCreateDeviceId(): string {
   try {
+    const cookieMatch = document.cookie.match(/(?:^|;\s*)device_id=([^;]*)/);
+    if (cookieMatch && cookieMatch[1]) {
+      localStorage.setItem(DEVICE_ID_KEY, cookieMatch[1]);
+      return cookieMatch[1];
+    }
+
     let id = localStorage.getItem(DEVICE_ID_KEY);
     if (id) return id;
     id = crypto.randomUUID();

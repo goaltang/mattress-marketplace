@@ -27,6 +27,7 @@ export interface MattressListing {
   isHygieneVerified?: boolean;
   isCleaned?: boolean;
   hasWeChatID?: boolean;
+  sellerDeviceId?: string;
   wechatId: string;
   phone?: string;
   createdAt: string;

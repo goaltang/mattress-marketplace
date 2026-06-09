@@ -17,6 +17,7 @@ export default function PostListingPage() {
     unreadNotifCount,
     currentCity,
     changeCity,
+    deviceId,
   } = useAppContext();
 
   const [showCityModal, setShowCityModal] = useState(false);
@@ -68,6 +69,7 @@ export default function PostListingPage() {
         <PostListing
           currentCity={currentCity}
           onPublish={handlePublishListing}
+          sellerDeviceId={deviceId}
         />
       </main>
 

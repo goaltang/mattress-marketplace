@@ -8,9 +8,10 @@ import { uploadImage } from "@/utils/upload";
 interface PostListingProps {
   onPublish: (newListing: MattressListing) => void;
   currentCity: string;
+  sellerDeviceId: string;
 }
 
-export default function PostListing({ onPublish, currentCity }: PostListingProps) {
+export default function PostListing({ onPublish, currentCity, sellerDeviceId }: PostListingProps) {
   const [brand, setBrand] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -103,6 +104,7 @@ export default function PostListing({ onPublish, currentCity }: PostListingProps
       isVerifiedClean: true,
       isHygieneVerified: Math.random() > 0.5,
       isCleaned: true,
+      sellerDeviceId,
       wechatId,
       phone: phone || "135-2233-4455",
       createdAt: new Date().toISOString().split("T")[0],
