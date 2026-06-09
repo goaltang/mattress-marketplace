@@ -8,10 +8,9 @@ import { uploadImage } from "@/utils/upload";
 interface PostListingProps {
   onPublish: (newListing: MattressListing) => void;
   currentCity: string;
-  sellerDeviceId: string;
 }
 
-export default function PostListing({ onPublish, currentCity, sellerDeviceId }: PostListingProps) {
+export default function PostListing({ onPublish, currentCity }: PostListingProps) {
   const [brand, setBrand] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -104,7 +103,6 @@ export default function PostListing({ onPublish, currentCity, sellerDeviceId }: 
       isVerifiedClean: true,
       isHygieneVerified: Math.random() > 0.5,
       isCleaned: true,
-      sellerDeviceId,
       wechatId,
       phone: phone || "135-2233-4455",
       createdAt: new Date().toISOString().split("T")[0],
@@ -516,6 +514,8 @@ export default function PostListing({ onPublish, currentCity, sellerDeviceId }: 
               alt="Map Background"
               className="w-full h-full object-cover opacity-85"
               referrerPolicy="no-referrer"
+              loading="lazy"
+              decoding="async"
             />
 
             <div className="absolute top-4 left-4 right-4 flex gap-2">

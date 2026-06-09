@@ -4,6 +4,7 @@ import { createClient } from "@/utils/supabase/server";
 import { MattressListing } from "@/types";
 import { revalidatePath } from "next/cache";
 import { isSupabaseConfigured } from "@/utils/db";
+import { cookies } from "next/headers";
 
 const SUPABASE_TIMEOUT_MS = 8000;
 
@@ -24,10 +25,12 @@ async function withTimeout(promiseLike: any, ms: number): Promise<any> {
  */
 export async function publishListing(newListing: MattressListing) {
   const configured = isSupabaseConfigured();
+  const cookieStore = cookies();
+  const deviceId = cookieStore.get("device_id")?.value || null;
 
   if (configured) {
     try {
-      const supabase = createClient();
+      const supabase = createClient(deviceId || undefined);
 
       const { error } = await withTimeout(
         supabase.from("listings").insert([
@@ -36,7 +39,7 @@ export async function publishListing(newListing: MattressListing) {
           title: newListing.title,
           brand: newListing.brand,
           price: newListing.price,
-          retailPrice: newListing.retailPrice, // 如果数据库中是驼峰或下划线，Supabase 会做映射，此处需与表结构匹配
+          retailPrice: newListing.retailPrice,
           size: newListing.size,
           dimensionsText: newListing.dimensionsText,
           material: newListing.material,
@@ -54,7 +57,7 @@ export async function publishListing(newListing: MattressListing) {
           isVerifiedClean: newListing.isVerifiedClean,
           isHygieneVerified: newListing.isHygieneVerified,
           isCleaned: newListing.isCleaned,
-          sellerDeviceId: newListing.sellerDeviceId || null,
+          sellerDeviceId: deviceId,
           wechatId: newListing.wechatId,
           phone: newListing.phone,
           createdAt: newListing.createdAt,

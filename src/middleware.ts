@@ -1,13 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { updateSession } from "@/utils/supabase/middleware";
 
 const DEVICE_ID_COOKIE = "device_id";
 
 export async function middleware(request: NextRequest) {
-  const supabaseResponse = NextResponse.next({
-    request,
-  });
-
-  const { pathname } = request.nextUrl;
+  const { supabaseResponse } = await updateSession(request);
 
   if (!request.cookies.get(DEVICE_ID_COOKIE)?.value) {
     supabaseResponse.cookies.set(DEVICE_ID_COOKIE, crypto.randomUUID(), {
@@ -18,6 +15,8 @@ export async function middleware(request: NextRequest) {
       path: "/",
     });
   }
+
+  const { pathname } = request.nextUrl;
 
   if (pathname === "/") {
     const citySlug = request.cookies.get("city_slug")?.value;

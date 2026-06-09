@@ -23,7 +23,6 @@ function MeProfileContent() {
     currentCity,
     changeCity,
     isLoadingFavorites,
-    deviceId,
   } = useAppContext();
 
   // 当前激活的选项卡 (favorites 或 messages)
@@ -141,7 +140,6 @@ function MeProfileContent() {
             onUpdateNotifications={updateNotificationsState}
             listings={listings}
             onUpdateListings={updateListingsState}
-            deviceId={deviceId}
           />
         )}
       </main>

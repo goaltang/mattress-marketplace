@@ -16,32 +16,12 @@ interface AppContextType {
   relocalize: () => Promise<void>;
   syncFavorites: () => void;
   isLoadingFavorites: boolean;
-  deviceId: string;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 const DEFAULT_CITY_SLUG = "beijing";
-const DEVICE_ID_KEY = "restored_device_id_v1";
 const FAVORITES_KEY = "restored_favorites_v1";
-
-function getOrCreateDeviceId(): string {
-  try {
-    const cookieMatch = document.cookie.match(/(?:^|;\s*)device_id=([^;]*)/);
-    if (cookieMatch && cookieMatch[1]) {
-      localStorage.setItem(DEVICE_ID_KEY, cookieMatch[1]);
-      return cookieMatch[1];
-    }
-
-    let id = localStorage.getItem(DEVICE_ID_KEY);
-    if (id) return id;
-    id = crypto.randomUUID();
-    localStorage.setItem(DEVICE_ID_KEY, id);
-    return id;
-  } catch {
-    return crypto.randomUUID();
-  }
-}
 
 /**
  * 把太平洋接口返回的中文城市名解析成项目内 slug。
@@ -70,7 +50,6 @@ export function AppContextProvider({ children }: { children: React.ReactNode }) 
   const [unreadNotifCount, setUnreadNotifCount] = useState(0);
   const [currentCity, setCurrentCity] = useState("Beijing");
   const [isLoadingFavorites, setIsLoadingFavorites] = useState(true);
-  const deviceIdRef = useRef<string>("");
   const syncInProgressRef = useRef(false);
 
   // 从 localStorage 载入初次状态以维持客户端一致性
@@ -90,12 +69,10 @@ export function AppContextProvider({ children }: { children: React.ReactNode }) 
   // 从 Supabase 加载收藏列表并合并到本地
   const syncFavoritesFromDB = useCallback(async () => {
     if (syncInProgressRef.current) return;
-    const deviceId = deviceIdRef.current;
-    if (!deviceId) return;
 
     syncInProgressRef.current = true;
     try {
-      const res = await fetch(`/api/favorites?device_id=${encodeURIComponent(deviceId)}`);
+      const res = await fetch(`/api/favorites`);
       const data = await res.json();
 
       if (data.success && Array.isArray(data.favorites)) {
@@ -165,27 +142,18 @@ export function AppContextProvider({ children }: { children: React.ReactNode }) 
   }, [persistCity, router]);
 
   useEffect(() => {
-    // 1. 初始化 device ID（用于 Supabase 收藏同步）
-    deviceIdRef.current = getOrCreateDeviceId();
-
-    // 2. 初始化读取收藏夹（localStorage 快速缓存）
     syncFavorites();
 
-    // 3. 异步从 Supabase 合并服务端收藏数据
     syncFavoritesFromDB();
 
-    // 4. 从 API 获取未读通知数量
-    const deviceId = deviceIdRef.current;
-    if (deviceId) {
-      fetch(`/api/notifications?device_id=${encodeURIComponent(deviceId)}`)
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.success && Array.isArray(data.notifications)) {
-            setUnreadNotifCount(data.notifications.filter((n: NotificationItem) => n.unread).length);
-          }
-        })
-        .catch(() => {});
-    }
+    fetch(`/api/notifications`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && Array.isArray(data.notifications)) {
+          setUnreadNotifCount(data.notifications.filter((n: NotificationItem) => n.unread).length);
+        }
+      })
+      .catch(() => {});
 
     // 5. 初始化城市同步与国内 IP 智能定位
     try {
@@ -226,16 +194,12 @@ export function AppContextProvider({ children }: { children: React.ReactNode }) 
           localStorage.setItem(FAVORITES_KEY, JSON.stringify(next));
         } catch { /* ignore */ }
 
-        // 异步同步到 Supabase（不阻塞 UI）
-        const deviceId = deviceIdRef.current;
-        if (deviceId) {
-          const endpoint = "/api/favorites";
-          fetch(endpoint, {
-            method: isFavorited ? "DELETE" : "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ device_id: deviceId, listing_id: id }),
-          }).catch(() => { /* DB 写入失败时本地数据仍然有效 */ });
-        }
+        const endpoint = "/api/favorites";
+        fetch(endpoint, {
+          method: isFavorited ? "DELETE" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ listing_id: id }),
+        }).catch(() => { /* DB 写入失败时本地数据仍然有效 */ });
 
         return next;
       });
@@ -255,7 +219,6 @@ export function AppContextProvider({ children }: { children: React.ReactNode }) 
         relocalize,
         syncFavorites,
         isLoadingFavorites,
-        deviceId: deviceIdRef.current,
       }}
     >
       {children}

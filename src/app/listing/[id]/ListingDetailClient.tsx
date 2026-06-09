@@ -22,7 +22,6 @@ export default function ListingDetailClient({ listingId, initialListing }: Listi
     unreadNotifCount,
     currentCity,
     changeCity,
-    deviceId,
   } = useAppContext();
 
   // 状态维护（如果服务端没获取到，客户端可以通过 useEffect 去 localStorage 尝试加载）
@@ -110,7 +109,6 @@ export default function ListingDetailClient({ listingId, initialListing }: Listi
             toggleFavorite(id);
           }}
           onGoBack={handleGoBack}
-          deviceId={deviceId}
         />
       </main>
 

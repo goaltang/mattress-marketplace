@@ -9,7 +9,6 @@ interface MessagesViewProps {
   onUpdateNotifications: (notifs: NotificationItem[]) => void;
   listings: MattressListing[];
   onUpdateListings: (listings: MattressListing[]) => void;
-  deviceId: string;
 }
 
 export default function MessagesView({
@@ -17,7 +16,6 @@ export default function MessagesView({
   onUpdateNotifications,
   listings,
   onUpdateListings,
-  deviceId,
 }: MessagesViewProps) {
   const [selectedNotifForPrice, setSelectedNotifForPrice] = useState<NotificationItem | null>(null);
   const [newPrice, setNewPrice] = useState("");
@@ -30,9 +28,8 @@ export default function MessagesView({
   };
 
   const fetchNotifications = useCallback(async () => {
-    if (!deviceId) return;
     try {
-      const res = await fetch(`/api/notifications?device_id=${encodeURIComponent(deviceId)}`);
+      const res = await fetch(`/api/notifications`);
       const data = await res.json();
       if (data.success && Array.isArray(data.notifications)) {
         onUpdateNotifications(data.notifications);
@@ -42,7 +39,7 @@ export default function MessagesView({
     } finally {
       setIsLoading(false);
     }
-  }, [deviceId, onUpdateNotifications]);
+  }, [onUpdateNotifications]);
 
   useEffect(() => {
     fetchNotifications();
@@ -52,15 +49,13 @@ export default function MessagesView({
     const updated = notifications.map((n) => ({ ...n, unread: false }));
     onUpdateNotifications(updated);
 
-    if (deviceId) {
-      try {
-        await fetch("/api/notifications", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ device_id: deviceId, unread: false }),
-        });
-      } catch {}
-    }
+    try {
+      await fetch("/api/notifications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ unread: false }),
+      });
+    } catch {}
   };
 
   const handleAcceptRequest = async (notifId: string) => {
@@ -80,21 +75,18 @@ export default function MessagesView({
     onUpdateNotifications(updatedNotifs);
     showToast("已批准买家联络申请，微信 ID 已分享！");
 
-    if (deviceId) {
-      try {
-        await fetch("/api/notifications", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            id: notifId,
-            device_id: deviceId,
-            unread: false,
-            action_state: "accepted",
-            message: `已向 ${buyerLabel} 分享您的微信，对方将主动联系您。`,
-          }),
-        });
-      } catch {}
-    }
+    try {
+      await fetch("/api/notifications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: notifId,
+          unread: false,
+          action_state: "accepted",
+          message: `已向 ${buyerLabel} 分享您的微信，对方将主动联系您。`,
+        }),
+      });
+    } catch {}
   };
 
   const handleRejectRequest = async (notifId: string) => {
@@ -111,21 +103,18 @@ export default function MessagesView({
     });
     onUpdateNotifications(updatedNotifs);
 
-    if (deviceId) {
-      try {
-        await fetch("/api/notifications", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            id: notifId,
-            device_id: deviceId,
-            unread: false,
-            action_state: "declined",
-            message: "Contact request declined.",
-          }),
-        });
-      } catch {}
-    }
+    try {
+      await fetch("/api/notifications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: notifId,
+          unread: false,
+          action_state: "declined",
+          message: "Contact request declined.",
+        }),
+      });
+    } catch {}
   };
 
   const handlePriceAdjustSubmit = async (e: React.FormEvent) => {
@@ -160,14 +149,13 @@ export default function MessagesView({
     setNewPrice("");
     showToast(`价格已降至 ¥${priceNum.toLocaleString()}，收藏用户已收到降价通知！`);
 
-    if (deviceId && selectedNotifForPrice) {
+    if (selectedNotifForPrice) {
       try {
         await fetch("/api/notifications", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             id: selectedNotifForPrice.id,
-            device_id: deviceId,
             unread: false,
             action_state: "accepted",
             message: `Successfully adjusted brand mattress listing price to ¥${priceNum.toLocaleString()}! Watchers have been notified of the drop.`,

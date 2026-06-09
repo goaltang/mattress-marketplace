@@ -23,16 +23,14 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: false, error: "Supabase not configured" }, { status: 503 });
   }
 
-  const cookieDeviceId = getDeviceIdFromCookie(request);
-  const queryDeviceId = request.nextUrl.searchParams.get("device_id");
-  const deviceId = queryDeviceId || cookieDeviceId;
+  const deviceId = getDeviceIdFromCookie(request);
 
   if (!deviceId) {
     return NextResponse.json({ success: false, error: "Missing device_id" }, { status: 400 });
   }
 
   try {
-    const supabase = createClient(cookieDeviceId || undefined);
+    const supabase = createClient(deviceId);
     const { data, error } = await withTimeout(
       supabase
         .from("notifications")
@@ -124,28 +122,23 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ success: false, error: "Supabase not configured" }, { status: 503 });
   }
 
-  const cookieDeviceId = getDeviceIdFromCookie(request);
-  if (!cookieDeviceId) {
+  const deviceId = getDeviceIdFromCookie(request);
+  if (!deviceId) {
     return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
   }
 
   try {
     const body = await request.json();
-    const { id, device_id, unread, action_state, message } = body;
+    const { id, unread, action_state, message } = body;
 
-    if (device_id && device_id !== cookieDeviceId) {
-      return NextResponse.json({ success: false, error: "Forbidden: device_id mismatch" }, { status: 403 });
-    }
-
-    const targetDeviceId = device_id || cookieDeviceId;
-    const supabase = createClient(cookieDeviceId);
+    const supabase = createClient(deviceId);
     const updates: Record<string, unknown> = {};
 
     if (unread !== undefined) updates.unread = unread;
     if (action_state !== undefined) updates.action_state = action_state;
     if (message !== undefined) updates.message = message;
 
-    let query = supabase.from("notifications").update(updates).eq("device_id", targetDeviceId);
+    let query = supabase.from("notifications").update(updates).eq("device_id", deviceId);
 
     if (id) {
       query = query.eq("id", id);
@@ -173,22 +166,17 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ success: false, error: "Supabase not configured" }, { status: 503 });
   }
 
-  const cookieDeviceId = getDeviceIdFromCookie(request);
-  if (!cookieDeviceId) {
+  const deviceId = getDeviceIdFromCookie(request);
+  if (!deviceId) {
     return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
   }
 
   try {
     const body = await request.json();
-    const { id, device_id } = body;
+    const { id } = body;
 
-    if (device_id && device_id !== cookieDeviceId) {
-      return NextResponse.json({ success: false, error: "Forbidden: device_id mismatch" }, { status: 403 });
-    }
-
-    const targetDeviceId = device_id || cookieDeviceId;
-    const supabase = createClient(cookieDeviceId);
-    let query = supabase.from("notifications").delete().eq("device_id", targetDeviceId);
+    const supabase = createClient(deviceId);
+    let query = supabase.from("notifications").delete().eq("device_id", deviceId);
 
     if (id) {
       query = query.eq("id", id);

@@ -12,14 +12,19 @@ import {
   Clock,
   FileText,
   MessageSquare,
+  Loader2,
 } from "lucide-react";
+
+interface SellerContact {
+  wechatId: string;
+  phone?: string;
+}
 
 interface ListingDetailProps {
   listing: MattressListing;
   isBookmarked: boolean;
   onBookmarkToggle: (id: string, e: React.MouseEvent) => void;
   onGoBack: () => void;
-  deviceId?: string;
 }
 
 export default function ListingDetail({
@@ -27,7 +32,6 @@ export default function ListingDetail({
   isBookmarked,
   onBookmarkToggle,
   onGoBack,
-  deviceId,
 }: ListingDetailProps) {
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [copied, setCopied] = useState(false);
@@ -35,20 +39,38 @@ export default function ListingDetail({
   const [contactSent, setContactSent] = useState(false);
   const [buyerName, setBuyerName] = useState("");
   const [showContactModal, setShowContactModal] = useState(false);
+  const [sellerContact, setSellerContact] = useState<SellerContact | null>(null);
+  const [isLoadingContact, setIsLoadingContact] = useState(false);
 
-  const handleCopyWeChat = () => {
-    navigator.clipboard.writeText(listing.wechatId);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2500);
+  const fetchSellerContact = async (): Promise<SellerContact | null> => {
+    if (sellerContact) return sellerContact;
+    setIsLoadingContact(true);
+    try {
+      const res = await fetch(`/api/listings/${listing.id}/contact`);
+      const data = await res.json();
+      if (data.success && data.contact) {
+        setSellerContact(data.contact);
+        return data.contact;
+      }
+    } catch {
+      // ignore
+    } finally {
+      setIsLoadingContact(false);
+    }
+    return null;
+  };
+
+  const handleCopyWeChat = async () => {
+    const contact = await fetchSellerContact();
+    if (contact?.wechatId) {
+      navigator.clipboard.writeText(contact.wechatId);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    }
   };
 
   const handleSendContactRequest = async () => {
     if (!buyerName.trim()) return;
-    if (!deviceId) {
-      setContactSent(true);
-      setShowContactModal(false);
-      return;
-    }
 
     try {
       const targetDeviceId = listing.sellerDeviceId;
@@ -123,6 +145,7 @@ export default function ListingDetail({
               alt={listing.title}
               className="w-full h-full object-cover transition-transform duration-500 hover:scale-105"
               referrerPolicy="no-referrer"
+              fetchPriority="high"
             />
           </div>
 
@@ -143,6 +166,8 @@ export default function ListingDetail({
                     alt={`Thumbnail ${idx}`}
                     className="w-full h-full object-cover"
                     referrerPolicy="no-referrer"
+                    loading="lazy"
+                    decoding="async"
                   />
                 </button>
               ))}
@@ -303,13 +328,16 @@ export default function ListingDetail({
 
             <button
               onClick={handleCopyWeChat}
+              disabled={isLoadingContact}
               className={`flex-1 flex items-center justify-center gap-2 py-4 rounded-xl text-[14px] font-semibold border transition-all cursor-pointer ${
                 copied
                   ? "bg-emerald-50 text-emerald-700 border-emerald-200"
                   : "bg-[#f3f3f4] text-black border-transparent hover:bg-neutral-200"
               }`}
             >
-              {copied ? (
+              {isLoadingContact ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : copied ? (
                 <>
                   <Check className="w-4 h-4 text-emerald-600" />
                   <span>微信号复制成功</span>
@@ -323,10 +351,17 @@ export default function ListingDetail({
             </button>
 
             <button
-              onClick={() => setIsCalling(true)}
+              onClick={async () => {
+                await fetchSellerContact();
+                setIsCalling(true);
+              }}
               className="flex-1 flex items-center justify-center gap-2 bg-black text-white py-4 rounded-xl text-[14px] font-semibold hover:bg-neutral-800 transition-all cursor-pointer shadow-sm active:scale-95 border-0"
             >
-              <PhoneCall className="w-4 h-4" />
+              {isLoadingContact ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <PhoneCall className="w-4 h-4" />
+              )}
               <span>拨打卖家电话</span>
             </button>
           </div>
@@ -348,13 +383,13 @@ export default function ListingDetail({
               {listing.brand} 卖家
             </h3>
             <p className="text-gray-500 text-[14px] mb-6 font-medium">
-              {listing.phone || "138-xxxx-xxxx"}
+              {sellerContact?.phone || "138-xxxx-xxxx"}
             </p>
 
             <div className="bg-gray-50 p-4 rounded-xl text-left border border-gray-100 mb-6 text-[13px] text-gray-600 leading-relaxed font-body">
               <strong>呼叫指引：</strong> 本应用目前运行于演示沙箱容器。在实际生产部署中，拨号动作将唤起移动端系统话筒开启直连沟通。卖家预留 WeChat ID 为{" "}
               <code className="text-black font-semibold bg-gray-100 px-1 rounded">
-                {listing.wechatId}
+                {sellerContact?.wechatId || "待获取"}
               </code>
               。
             </div>
