@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useMemo, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { MattressListing, MattressSize, MattressMaterial } from "@/types";
+import React, { useState, useMemo, useEffect, useCallback, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { MattressListing, MattressSize, MattressMaterial, MattressCondition } from "@/types";
 import { useAppContext } from "@/context/AppContext";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
@@ -16,6 +16,7 @@ import {
   RotateCcw,
   Award,
   ShieldCheck,
+  ChevronDown,
 } from "lucide-react";
 
 interface CityBrowseClientProps {
@@ -23,8 +24,32 @@ interface CityBrowseClientProps {
   initialListings: MattressListing[];
 }
 
-export default function CityBrowseClient({ citySlug, initialListings }: CityBrowseClientProps) {
+const SIZE_OPTIONS: MattressSize[] = ["1.2m", "1.5m", "1.8m", "King", "Custom"];
+const MATERIAL_OPTIONS: MattressMaterial[] = ["Spring", "Latex", "Memory Foam", "Hybrid"];
+const CONDITION_OPTIONS: { value: MattressCondition; label: string }[] = [
+  { value: "Brand New", label: "全新" },
+  { value: "Like New", label: "极好" },
+  { value: "Very Good", label: "自用" },
+];
+
+const SIZE_LABELS: Record<MattressSize, string> = {
+  "1.2m": "1.2m 单人床",
+  "1.5m": "1.5m 双人床",
+  "1.8m": "1.8m 豪华床",
+  "King": "King",
+  "Custom": "Custom",
+};
+
+const MATERIAL_LABELS: Record<MattressMaterial, string> = {
+  "Spring": "独立袋装弹簧",
+  "Latex": "天然乳胶",
+  "Memory Foam": "慢回弹记忆棉",
+  "Hybrid": "复合混合",
+};
+
+function CityBrowseInner({ citySlug, initialListings }: CityBrowseClientProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const {
     favorites,
     toggleFavorite,
@@ -34,14 +59,38 @@ export default function CityBrowseClient({ citySlug, initialListings }: CityBrow
 
   const cityKey = citySlug.charAt(0).toUpperCase() + citySlug.slice(1).toLowerCase();
 
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedSize, setSelectedSize] = useState<MattressSize | "All">("All");
-  const [selectedMaterial, setSelectedMaterial] = useState<MattressMaterial | "All">("All");
-  const [sortBy, setSortBy] = useState<"default" | "priceAsc" | "priceDesc">("default");
+  const [searchQuery, setSearchQuery] = useState(searchParams.get("q") || "");
+  const [selectedSize, setSelectedSize] = useState<MattressSize | "All">(
+    (searchParams.get("size") as MattressSize) || "All"
+  );
+  const [selectedMaterial, setSelectedMaterial] = useState<MattressMaterial | "All">(
+    (searchParams.get("material") as MattressMaterial) || "All"
+  );
+  const [selectedCondition, setSelectedCondition] = useState<MattressCondition | "All">(
+    (searchParams.get("condition") as MattressCondition) || "All"
+  );
+  const [minPrice, setMinPrice] = useState(searchParams.get("minPrice") || "");
+  const [maxPrice, setMaxPrice] = useState(searchParams.get("maxPrice") || "");
+  const [sortBy, setSortBy] = useState<"default" | "priceAsc" | "priceDesc">(
+    (searchParams.get("sort") as "default" | "priceAsc" | "priceDesc") || "default"
+  );
 
   const [showCityModal, setShowCityModal] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
 
   const [mergedListings, setMergedListings] = useState<MattressListing[]>(initialListings);
+
+  const updateURL = useCallback((params: Record<string, string>) => {
+    const url = new URL(window.location.href);
+    Object.entries(params).forEach(([key, value]) => {
+      if (value && value !== "All" && value !== "default" && value !== "") {
+        url.searchParams.set(key, value);
+      } else {
+        url.searchParams.delete(key);
+      }
+    });
+    router.replace(url.pathname + url.search, { scroll: false });
+  }, [router]);
 
   useEffect(() => {
     try {
@@ -62,25 +111,69 @@ export default function CityBrowseClient({ citySlug, initialListings }: CityBrow
     } catch {}
   }, [initialListings, citySlug]);
 
-  // 写入 Cookie 供 Middleware 识别（仅在挂载时运行一次，保持用户城市喜好）
   useEffect(() => {
     document.cookie = `city_slug=${citySlug.toLowerCase()}; path=/; max-age=31536000`;
   }, [citySlug]);
+
+  const handleSearchChange = (value: string) => {
+    setSearchQuery(value);
+    updateURL({ q: value });
+  };
+
+  const handleSizeChange = (value: MattressSize | "All") => {
+    setSelectedSize(value);
+    updateURL({ size: value });
+  };
+
+  const handleMaterialChange = (value: MattressMaterial | "All") => {
+    setSelectedMaterial(value);
+    updateURL({ material: value });
+  };
+
+  const handleConditionChange = (value: MattressCondition | "All") => {
+    setSelectedCondition(value);
+    updateURL({ condition: value });
+  };
+
+  const handleMinPriceChange = (value: string) => {
+    setMinPrice(value);
+    updateURL({ minPrice: value });
+  };
+
+  const handleMaxPriceChange = (value: string) => {
+    setMaxPrice(value);
+    updateURL({ maxPrice: value });
+  };
+
+  const handleSortChange = (value: "default" | "priceAsc" | "priceDesc") => {
+    setSortBy(value);
+    updateURL({ sort: value });
+  };
 
   const resetFilters = () => {
     setSearchQuery("");
     setSelectedSize("All");
     setSelectedMaterial("All");
+    setSelectedCondition("All");
+    setMinPrice("");
+    setMaxPrice("");
     setSortBy("default");
+    router.replace(window.location.pathname, { scroll: false });
   };
 
-  // 过滤商品列表 (使用 useMemo)
+  const hasActiveFilters = searchQuery ||
+    selectedSize !== "All" ||
+    selectedMaterial !== "All" ||
+    selectedCondition !== "All" ||
+    minPrice ||
+    maxPrice ||
+    sortBy !== "default";
+
   const currentListings = useMemo(() => {
     let list = mergedListings.filter(
       (item) => item.city.toLowerCase() === citySlug.toLowerCase()
     );
 
-    // 2. 搜索词匹配
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       list = list.filter(
@@ -92,17 +185,27 @@ export default function CityBrowseClient({ citySlug, initialListings }: CityBrow
       );
     }
 
-    // 3. 尺寸筛选
     if (selectedSize !== "All") {
       list = list.filter((item) => item.size === selectedSize);
     }
 
-    // 4. 材质筛选
     if (selectedMaterial !== "All") {
       list = list.filter((item) => item.material === selectedMaterial);
     }
 
-    // 5. 排序方式
+    if (selectedCondition !== "All") {
+      list = list.filter((item) => item.condition === selectedCondition);
+    }
+
+    const min = parseFloat(minPrice);
+    const max = parseFloat(maxPrice);
+    if (!isNaN(min)) {
+      list = list.filter((item) => item.price >= min);
+    }
+    if (!isNaN(max)) {
+      list = list.filter((item) => item.price <= max);
+    }
+
     if (sortBy === "priceAsc") {
       list = [...list].sort((a, b) => a.price - b.price);
     } else if (sortBy === "priceDesc") {
@@ -110,22 +213,28 @@ export default function CityBrowseClient({ citySlug, initialListings }: CityBrow
     }
 
     return list;
-  }, [mergedListings, citySlug, searchQuery, selectedSize, selectedMaterial, sortBy]);
+  }, [mergedListings, citySlug, searchQuery, selectedSize, selectedMaterial, selectedCondition, minPrice, maxPrice, sortBy]);
 
-  // 切换城市跳转，由全局 Context 统一进行跳转和状态更新
   const handleCityChange = (newCitySlug: string) => {
     setShowCityModal(false);
     changeCity(newCitySlug);
   };
 
-  // 商品卡片点击进入详情页
   const handleCardClick = (id: string) => {
     router.push(`/listing/${id}`);
   };
 
+  const activeFilterCount = [
+    searchQuery,
+    selectedSize !== "All" ? selectedSize : null,
+    selectedMaterial !== "All" ? selectedMaterial : null,
+    selectedCondition !== "All" ? selectedCondition : null,
+    minPrice,
+    maxPrice,
+  ].filter(Boolean).length;
+
   return (
     <div className="min-h-screen bg-white text-black flex flex-col font-sans antialiased pt-24 md:pt-28">
-      {/* 头部固定导航 */}
       <Header
         currentCity={cityKey}
         onCityClick={() => setShowCityModal(true)}
@@ -133,11 +242,9 @@ export default function CityBrowseClient({ citySlug, initialListings }: CityBrow
         unreadNotifCount={unreadNotifCount}
       />
 
-      {/* 核心工作流 */}
       <main className="flex-grow pb-24">
         <div className="max-w-[1200px] mx-auto px-4 md:px-6">
           
-          {/* 大 Banner 宣传 */}
           <section className="relative rounded-3xl bg-neutral-900 text-white overflow-hidden py-16 px-8 md:py-20 md:px-12 mb-10 select-none">
             <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-neutral-800 via-neutral-950 to-black opacity-90 z-0" />
             
@@ -171,7 +278,6 @@ export default function CityBrowseClient({ citySlug, initialListings }: CityBrow
             </div>
           </section>
 
-          {/* 搜索与过滤板块 */}
           <section className="bg-gray-50 rounded-2xl p-6 mb-10 border border-gray-100 flex flex-col gap-5 text-left select-none">
             
             <div className="flex flex-col md:flex-row gap-3">
@@ -180,13 +286,13 @@ export default function CityBrowseClient({ citySlug, initialListings }: CityBrow
                 <input
                   type="text"
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={(e) => handleSearchChange(e.target.value)}
                   placeholder="按品牌（席梦思、Tempur...）、材质或尺寸搜索本市闲置床垫"
                   className="w-full text-[14.5px] font-medium text-black bg-transparent outline-none p-0 border-0"
                 />
                 {searchQuery && (
                   <button
-                    onClick={() => setSearchQuery("")}
+                    onClick={() => handleSearchChange("")}
                     className="text-gray-400 hover:text-black border-0 bg-transparent p-0 cursor-pointer"
                   >
                     <X className="w-4 h-4" />
@@ -196,24 +302,60 @@ export default function CityBrowseClient({ citySlug, initialListings }: CityBrow
 
               <select
                 value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as "default" | "priceAsc" | "priceDesc")}
+                onChange={(e) => handleSortChange(e.target.value as "default" | "priceAsc" | "priceDesc")}
                 className="bg-white border border-gray-200 rounded-xl px-4 py-3 text-[14px] font-semibold text-gray-800 outline-none focus:border-black cursor-pointer shadow-sm min-w-[140px]"
               >
                 <option value="default">默认排序</option>
                 <option value="priceAsc">价格：低到高</option>
                 <option value="priceDesc">价格：高到低</option>
               </select>
+
+              <button
+                onClick={() => setShowFilters(!showFilters)}
+                className="md:hidden flex items-center justify-center gap-2 bg-white border border-gray-200 rounded-xl px-4 py-3 text-[14px] font-semibold text-gray-800 cursor-pointer"
+              >
+                <SlidersHorizontal className="w-4 h-4" />
+                <span>筛选</span>
+                {activeFilterCount > 0 && (
+                  <span className="bg-black text-white text-[11px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
+                    {activeFilterCount}
+                  </span>
+                )}
+                <ChevronDown className={`w-4 h-4 transition-transform ${showFilters ? "rotate-180" : ""}`} />
+              </button>
             </div>
 
-            <div className="flex flex-col gap-4 border-t border-gray-200/60 pt-4">
+            <div className={`flex flex-col gap-4 border-t border-gray-200/60 pt-4 ${showFilters ? "block" : "hidden md:block"}`}>
               
-              {/* 尺寸过滤 Chips */}
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="text-[12px] text-gray-400 font-bold uppercase tracking-wider shrink-0 pr-1">
+                  价格区间:
+                </span>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    value={minPrice}
+                    onChange={(e) => handleMinPriceChange(e.target.value)}
+                    placeholder="最低价"
+                    className="w-24 bg-white border border-gray-200 focus:border-black rounded-lg px-3 py-1.5 text-[13px] font-medium text-black outline-none"
+                  />
+                  <span className="text-gray-400">-</span>
+                  <input
+                    type="number"
+                    value={maxPrice}
+                    onChange={(e) => handleMaxPriceChange(e.target.value)}
+                    placeholder="最高价"
+                    className="w-24 bg-white border border-gray-200 focus:border-black rounded-lg px-3 py-1.5 text-[13px] font-medium text-black outline-none"
+                  />
+                </div>
+              </div>
+
               <div className="flex flex-wrap items-center gap-3">
                 <span className="text-[12px] text-gray-400 font-bold uppercase tracking-wider shrink-0 pr-1">
                   床垫尺寸:
                 </span>
                 <button
-                  onClick={() => setSelectedSize("All")}
+                  onClick={() => handleSizeChange("All")}
                   className={`px-4 py-1.5 rounded-full text-[13px] font-semibold border cursor-pointer select-none transition-all ${
                     selectedSize === "All"
                       ? "bg-black text-white border-black"
@@ -222,34 +364,27 @@ export default function CityBrowseClient({ citySlug, initialListings }: CityBrow
                 >
                   全部尺寸
                 </button>
-                {(["1.2m", "1.5m", "1.8m", "King", "Custom"] as MattressSize[]).map((sz) => (
+                {SIZE_OPTIONS.map((sz) => (
                   <button
                     key={sz}
-                    onClick={() => setSelectedSize(sz)}
+                    onClick={() => handleSizeChange(sz)}
                     className={`px-4 py-1.5 rounded-full text-[13px] font-semibold border cursor-pointer select-none transition-all ${
                       selectedSize === sz
                         ? "bg-black text-white border-black"
                         : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"
                     }`}
                   >
-                    {sz === "1.2m"
-                      ? "1.2m 单人床"
-                      : sz === "1.5m"
-                      ? "1.5m 双人床"
-                      : sz === "1.8m"
-                      ? "1.8m 豪华床"
-                      : sz}
+                    {SIZE_LABELS[sz]}
                   </button>
                 ))}
               </div>
 
-              {/* 材质分类 Chips */}
               <div className="flex flex-wrap items-center gap-3">
                 <span className="text-[12px] text-gray-400 font-bold uppercase tracking-wider shrink-0 pr-1">
                   材质分类:
                 </span>
                 <button
-                  onClick={() => setSelectedMaterial("All")}
+                  onClick={() => handleMaterialChange("All")}
                   className={`px-4 py-1.5 rounded-full text-[13px] font-semibold border cursor-pointer select-none transition-all ${
                     selectedMaterial === "All"
                       ? "bg-black text-white border-black"
@@ -258,31 +393,50 @@ export default function CityBrowseClient({ citySlug, initialListings }: CityBrow
                 >
                   所有材质
                 </button>
-                {(["Spring", "Memory Foam", "Latex", "Hybrid"] as MattressMaterial[]).map((mat) => (
+                {MATERIAL_OPTIONS.map((mat) => (
                   <button
                     key={mat}
-                    onClick={() => setSelectedMaterial(mat)}
+                    onClick={() => handleMaterialChange(mat)}
                     className={`px-4 py-1.5 rounded-full text-[13px] font-semibold border cursor-pointer select-none transition-all ${
                       selectedMaterial === mat
                         ? "bg-black text-white border-black"
                         : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"
                     }`}
                   >
-                    {mat === "Spring"
-                      ? "独立袋装弹簧"
-                      : mat === "Memory Foam"
-                      ? "慢回弹记忆棉"
-                      : mat === "Latex"
-                      ? "天然乳胶"
-                      : "复合混合"}
+                    {MATERIAL_LABELS[mat]}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="text-[12px] text-gray-400 font-bold uppercase tracking-wider shrink-0 pr-1">
+                  成色状况:
+                </span>
+                <button
+                  onClick={() => handleConditionChange("All")}
+                  className={`px-4 py-1.5 rounded-full text-[13px] font-semibold border cursor-pointer select-none transition-all ${
+                    selectedCondition === "All"
+                      ? "bg-black text-white border-black"
+                      : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"
+                  }`}
+                >
+                  所有成色
+                </button>
+                {CONDITION_OPTIONS.map((cond) => (
+                  <button
+                    key={cond.value}
+                    onClick={() => handleConditionChange(cond.value)}
+                    className={`px-4 py-1.5 rounded-full text-[13px] font-semibold border cursor-pointer select-none transition-all ${
+                      selectedCondition === cond.value
+                        ? "bg-black text-white border-black"
+                        : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"
+                    }`}
+                  >
+                    {cond.label}
                   </button>
                 ))}
 
-                {/* 重置筛选 */}
-                {(searchQuery ||
-                  selectedSize !== "All" ||
-                  selectedMaterial !== "All" ||
-                  sortBy !== "default") && (
+                {hasActiveFilters && (
                   <button
                     onClick={resetFilters}
                     className="ml-auto text-[12px] font-bold text-gray-500 hover:text-black flex items-center gap-1.5 underline underline-offset-4 cursor-pointer border-0 bg-transparent p-0"
@@ -296,7 +450,6 @@ export default function CityBrowseClient({ citySlug, initialListings }: CityBrow
             </div>
           </section>
 
-          {/* 商品网格标题 */}
           <div className="flex justify-between items-baseline mb-6 border-b border-gray-100 pb-3 select-none text-left">
             <h2 className="font-headline font-bold text-xl text-black">
               {cityKey === "Hangzhou" ? "杭州滨江与西湖在售" : "北京朝阳与海淀在售"} ({currentListings.length})
@@ -306,7 +459,6 @@ export default function CityBrowseClient({ citySlug, initialListings }: CityBrow
             </span>
           </div>
 
-          {/* 商品网格 */}
           {currentListings.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
               {currentListings.map((listing) => (
@@ -343,10 +495,8 @@ export default function CityBrowseClient({ citySlug, initialListings }: CityBrow
         </div>
       </main>
 
-      {/* 页脚 */}
       <Footer currentCity={citySlug} />
 
-      {/* 城市切换模态框 */}
       {showCityModal && (
         <CityChooseModal
           currentCity={cityKey}
@@ -355,5 +505,13 @@ export default function CityBrowseClient({ citySlug, initialListings }: CityBrow
         />
       )}
     </div>
+  );
+}
+
+export default function CityBrowseClient(props: CityBrowseClientProps) {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-white flex items-center justify-center">加载中...</div>}>
+      <CityBrowseInner {...props} />
+    </Suspense>
   );
 }
