@@ -20,6 +20,7 @@ export default function CityChooseModal({
   const [searchResults, setSearchResults] = useState<City[]>([]);
   const [isLocating, setIsLocating] = useState(false);
   const [locateError, setLocateError] = useState<string | null>(null);
+  const [locateDebug, setLocateDebug] = useState<string | null>(null);
   const { locate: h5Locate, error: h5Error } = useGeolocation();
 
   useEffect(() => {
@@ -45,6 +46,25 @@ export default function CityChooseModal({
     NOT_SUPPORTED: "当前浏览器不支持定位，已为您切换为 IP 定位",
   };
 
+  const formatLocateReason = (reason: string): string => {
+    if (reason.startsWith("ip_city_not_supported:")) {
+      const parts = reason.split(":");
+      const service = parts[1] || "ip";
+      const rawCity = parts[2] || "";
+      if (rawCity) {
+        return `定位服务返回「${rawCity}」，暂未覆盖该城市（${service}）`;
+      }
+      return "当前网络环境无法识别城市，请手动选择";
+    }
+    if (reason === "all_locate_methods_failed") {
+      return "所有定位服务均不可用，请手动选择城市";
+    }
+    if (reason === "h5_city_not_supported") {
+      return "当前位置所在城市暂未开通服务，请手动选择附近城市";
+    }
+    return reason;
+  };
+
   const handleIpLocate = async (): Promise<boolean> => {
     try {
       const res = await fetch("/api/locate?source=ip");
@@ -52,6 +72,11 @@ export default function CityChooseModal({
       if (data?.success && data.slug) {
         onSelectCity(data.slug);
         return true;
+      }
+      // 记录服务端返回的失败原因，便于排查
+      if (data?.reason) {
+        setLocateDebug(data.reason);
+        setLocateError(formatLocateReason(data.reason));
       }
     } catch {
       /* IP 定位失败 */
@@ -62,6 +87,7 @@ export default function CityChooseModal({
   const handleAutoLocate = async () => {
     setIsLocating(true);
     setLocateError(null);
+    setLocateDebug(null);
 
     // 1. 优先 H5 定位
     const position = await h5Locate();
@@ -76,13 +102,17 @@ export default function CityChooseModal({
           setIsLocating(false);
           return;
         }
+        if (data?.reason) {
+          setLocateDebug(data.reason);
+          setLocateError(formatLocateReason(data.reason));
+        }
       } catch {
         /* H5 定位解析失败，继续降级 */
       }
     }
 
     // 2. H5 失败/未授权时，降级到 IP 定位
-    if (h5Error) {
+    if (h5Error && !locateError) {
       setLocateError(ERROR_MESSAGES[h5Error]);
     }
 
@@ -92,7 +122,9 @@ export default function CityChooseModal({
       return;
     }
 
-    setLocateError("定位失败，请手动选择城市");
+    if (!locateError) {
+      setLocateError("定位失败，请手动选择城市");
+    }
     setIsLocating(false);
   };
 
@@ -154,6 +186,12 @@ export default function CityChooseModal({
           {locateError && (
             <div className="text-xs text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30 border border-rose-100 dark:border-rose-900/50 rounded-lg px-3 py-2.5">
               {locateError}
+            </div>
+          )}
+
+          {process.env.NODE_ENV === "development" && locateDebug && (
+            <div className="text-[10px] text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-neutral-800 border border-gray-100 dark:border-neutral-700 rounded-lg px-3 py-2 font-mono break-all">
+              debug: {locateDebug}
             </div>
           )}
 

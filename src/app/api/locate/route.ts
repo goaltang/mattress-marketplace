@@ -27,7 +27,7 @@ function getClientIp(request: NextRequest): string | null {
   return ip;
 }
 
-async function tryIpApi(ip: string | null): Promise<{ city: string; province: string } | null> {
+async function tryIpApi(ip: string | null): Promise<{ city: string; province: string; rawCity: string } | null> {
   try {
     const url = ip
       ? `http://ip-api.com/json/${encodeURIComponent(ip)}?lang=zh-CN&fields=status,message,city,regionName,query`
@@ -35,7 +35,7 @@ async function tryIpApi(ip: string | null): Promise<{ city: string; province: st
     const res = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
     const data = await res.json();
     if (data.status === "success" && data.city) {
-      return { city: data.city, province: data.regionName || "" };
+      return { city: data.city, province: data.regionName || "", rawCity: data.city };
     }
   } catch {
     /* 静默失败 */
@@ -43,7 +43,7 @@ async function tryIpApi(ip: string | null): Promise<{ city: string; province: st
   return null;
 }
 
-async function tryIpInfo(ip: string | null): Promise<{ city: string; province: string } | null> {
+async function tryIpInfo(ip: string | null): Promise<{ city: string; province: string; rawCity: string } | null> {
   try {
     const url = ip
       ? `https://ipinfo.io/${encodeURIComponent(ip)}/json`
@@ -51,7 +51,7 @@ async function tryIpInfo(ip: string | null): Promise<{ city: string; province: s
     const res = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
     const data = await res.json();
     if (data.city) {
-      return { city: data.city, province: data.region || "" };
+      return { city: data.city, province: data.region || "", rawCity: data.city };
     }
   } catch {
     /* 静默失败 */
@@ -59,21 +59,45 @@ async function tryIpInfo(ip: string | null): Promise<{ city: string; province: s
   return null;
 }
 
-async function ipLocate(ip: string | null): Promise<{ city: string; province: string } | null> {
+interface IpLocateResult {
+  city: string;
+  province: string;
+  rawCity: string;
+  service: "gaode" | "ip-api" | "ipinfo";
+}
+
+async function ipLocate(ip: string | null): Promise<IpLocateResult | null> {
+  const isDev = process.env.NODE_ENV !== "production";
+  const log = (msg: string) => {
+    if (isDev) console.log(`[locate] ${msg}`);
+  };
+
   // 1. 国内高德 IP 定位（需配置 Key）
   const gaodeKey = process.env.GAODE_IP_KEY;
   if (gaodeKey) {
     const gaodeResult = await gaodeIpLocate(ip, gaodeKey);
-    if (gaodeResult) return gaodeResult;
+    if (gaodeResult?.city) {
+      log(`gaode ok: ${gaodeResult.city}`);
+      return { ...gaodeResult, rawCity: gaodeResult.city, service: "gaode" };
+    }
+    log(`gaode empty or failed: ${JSON.stringify(gaodeResult)}`);
   }
 
   // 2. ip-api
   const ipApiResult = await tryIpApi(ip);
-  if (ipApiResult) return ipApiResult;
+  if (ipApiResult) {
+    log(`ip-api ok: ${ipApiResult.rawCity}`);
+    return { ...ipApiResult, service: "ip-api" };
+  }
+  log("ip-api empty or failed");
 
   // 3. ipinfo.io
   const ipInfoResult = await tryIpInfo(ip);
-  if (ipInfoResult) return ipInfoResult;
+  if (ipInfoResult) {
+    log(`ipinfo ok: ${ipInfoResult.rawCity}`);
+    return { ...ipInfoResult, service: "ipinfo" };
+  }
+  log("ipinfo empty or failed");
 
   return null;
 }
@@ -160,7 +184,7 @@ export async function GET(request: NextRequest) {
       name: "",
       source: "ip",
       confidence: "low",
-      reason: "ip_city_not_supported",
+      reason: `ip_city_not_supported:${result.service}:${result.rawCity}`,
     } satisfies LocateResult);
   }
 
