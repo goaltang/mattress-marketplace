@@ -3,7 +3,8 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { NotificationItem } from "@/types";
-import { ALL_CITIES, getCityName } from "@/config/cities";
+import { getCityName } from "@/config/cities";
+import { resolveCitySlug } from "@/utils/geo";
 import { showToast } from "@/components/Toast";
 
 interface AppContextType {
@@ -16,6 +17,10 @@ interface AppContextType {
   relocalize: () => Promise<void>;
   syncFavorites: () => void;
   isLoadingFavorites: boolean;
+  suggestedCity: { slug: string; name: string } | null;
+  showLocationPrompt: boolean;
+  dismissLocationPrompt: () => void;
+  syncRouteCity: (slug: string) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -23,34 +28,19 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 const DEFAULT_CITY_SLUG = "beijing";
 const FAVORITES_KEY = "restored_favorites_v1";
 
-/**
- * 把太平洋接口返回的中文城市名解析成项目内 slug。
- * 优先级：精准名 > 名包含关系（如 "杭州市" → "杭州"）。命中 ALL_CITIES 即返回 slug。
- * 解析失败返回 null。
- */
-function resolveCitySlug(rawCity: string): string | null {
-  if (!rawCity) return null;
-  const cleaned = rawCity.replace(/市$/, "").trim();
-  // 1. 精准匹配（去除「市」后等于配置中的汉字名）
-  const exact = ALL_CITIES.find((c) => c.name === cleaned);
-  if (exact) return exact.slug;
-  // 2. 包含匹配（太平洋可能返回 "杭州市萧山区" 这种带区县的字符串）
-  const contains = ALL_CITIES.find(
-    (c) => cleaned.includes(c.name) || c.name.includes(cleaned)
-  );
-  if (contains) return contains.slug;
-  return null;
-}
-
 export function AppContextProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
 
   // 状态定义
   const [favorites, setFavorites] = useState<string[]>([]);
   const [unreadNotifCount, setUnreadNotifCount] = useState(0);
-  const [currentCity, setCurrentCity] = useState("Beijing");
+  const [currentCity, setCurrentCity] = useState(DEFAULT_CITY_SLUG);
   const [isLoadingFavorites, setIsLoadingFavorites] = useState(true);
   const syncInProgressRef = useRef(false);
+
+  // 定位气泡推荐状态
+  const [suggestedCity, setSuggestedCity] = useState<{ slug: string; name: string } | null>(null);
+  const [isPromptDismissed, setIsPromptDismissed] = useState(false);
 
   // 从 localStorage 载入初次状态以维持客户端一致性
   const syncFavorites = useCallback(() => {
@@ -82,7 +72,6 @@ export function AppContextProvider({ children }: { children: React.ReactNode }) 
         setFavorites((prevLocal) => {
           const merged = Array.from(new Set([...prevLocal, ...dbFavorites]));
 
-          // 如果有新增的来自 DB 的收藏项，则更新 localStorage
           if (merged.length !== prevLocal.length) {
             try {
               localStorage.setItem(FAVORITES_KEY, JSON.stringify(merged));
@@ -102,10 +91,9 @@ export function AppContextProvider({ children }: { children: React.ReactNode }) 
   // 持久化当前城市（localStorage + cookie 双写）
   const persistCity = useCallback((slug: string) => {
     const lower = slug.toLowerCase();
-    const capitalized = lower.charAt(0).toUpperCase() + lower.slice(1);
-    setCurrentCity(capitalized);
+    setCurrentCity(lower);
     try {
-      localStorage.setItem("restored_current_city_v1", capitalized);
+      localStorage.setItem("restored_current_city_v1", lower);
     } catch {
       /* localStorage 不可用时静默 */
     }
@@ -116,34 +104,50 @@ export function AppContextProvider({ children }: { children: React.ReactNode }) 
   const changeCity = (newCitySlug: string) => {
     const slug = newCitySlug.toLowerCase();
     persistCity(slug);
+    // 切换城市后，气泡提醒直接隐退并设为关闭
+    setSuggestedCity(null);
     router.push(`/${slug}`);
   };
 
-  // 重新根据客户端 IP 定位一次（用于「重新定位」入口）
+  // 重新根据客户端 IP 定位一次（用于「重新定位」入口，保留用户主动要求强跳转行为）
   const relocalize = useCallback(async () => {
     try {
-      const res = await fetch("/api/locate");
+      const res = await fetch("/api/locate?source=auto");
       const data = await res.json();
-      if (data?.success && data.city) {
-        const slug = resolveCitySlug(data.city);
-        if (slug) {
-          persistCity(slug);
-          // 自动定位场景用 replace，避免堆栈污染
-          router.replace(`/${slug}`);
-          return;
-        }
+      if (data?.success && data.slug) {
+        persistCity(data.slug);
+        setSuggestedCity(null);
+        router.replace(`/${data.slug}`);
+        return;
       }
     } catch {
       /* 忽略错误 */
     }
-    // 失败/无匹配 → 兜底到默认城市，同样用 replace
     persistCity(DEFAULT_CITY_SLUG);
     router.replace(`/${DEFAULT_CITY_SLUG}`);
   }, [persistCity, router]);
 
+  // 页面加载或切换路由时，同步当前路由中的实际城市名
+  const syncRouteCity = useCallback((slug: string) => {
+    setCurrentCity(slug.toLowerCase());
+  }, []);
+
+  // 气泡忽略处理
+  const dismissLocationPrompt = useCallback(() => {
+    setIsPromptDismissed(true);
+    try {
+      localStorage.setItem("restored_location_prompt_dismissed_v1", "true");
+    } catch {}
+  }, []);
+
+  // 运行时推导属性：是否在页面上激活显示切换城市气泡
+  const showLocationPrompt = 
+    suggestedCity !== null && 
+    suggestedCity.slug.toLowerCase() !== currentCity.toLowerCase() && 
+    !isPromptDismissed;
+
   useEffect(() => {
     syncFavorites();
-
     syncFavoritesFromDB();
 
     fetch(`/api/notifications`)
@@ -155,22 +159,34 @@ export function AppContextProvider({ children }: { children: React.ReactNode }) 
       })
       .catch(() => {});
 
-    // 5. 初始化城市同步与国内 IP 智能定位
+    // 初始化气泡忽略记录
+    try {
+      const storedDismissed = localStorage.getItem("restored_location_prompt_dismissed_v1") === "true";
+      setIsPromptDismissed(storedDismissed);
+    } catch {}
+
+    // 初始化城市同步与国内 IP 智能定位
     try {
       const storedCity = localStorage.getItem("restored_current_city_v1");
       if (storedCity) {
         const slug = storedCity.toLowerCase();
-        setCurrentCity(storedCity.charAt(0).toUpperCase() + slug.slice(1).toLowerCase());
-        // 把旧 cookie 同步一遍（兼容早期没有 cookie 的情况）
+        setCurrentCity(slug);
         document.cookie = `city_slug=${slug}; path=/; max-age=31536000`;
       } else {
-        // 首次进入的新用户：调用 IP 定位
-        relocalize();
+        // 首次进入的新用户：在后台默默监听 IP 定位，不做强制跳转！
+        fetch("/api/locate?source=auto")
+          .then((res) => res.json())
+          .then((data) => {
+            if (data?.success && data.slug) {
+              const locatedCityZh = data.name || getCityName(data.slug) || data.slug;
+              setSuggestedCity({ slug: data.slug, name: locatedCityZh });
+            }
+          })
+          .catch(() => {});
       }
     } catch {
-      setCurrentCity("Beijing");
+      setCurrentCity(DEFAULT_CITY_SLUG);
     }
-    // syncFavorites / syncFavoritesFromDB / relocalize 均为 useCallback 稳定引用，仅初始化时运行
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -189,7 +205,6 @@ export function AppContextProvider({ children }: { children: React.ReactNode }) 
           showToast("已加入收藏夹", "success");
         }
 
-        // 立即持久化到 localStorage
         try {
           localStorage.setItem(FAVORITES_KEY, JSON.stringify(next));
         } catch { /* ignore */ }
@@ -219,6 +234,10 @@ export function AppContextProvider({ children }: { children: React.ReactNode }) 
         relocalize,
         syncFavorites,
         isLoadingFavorites,
+        suggestedCity,
+        showLocationPrompt,
+        dismissLocationPrompt,
+        syncRouteCity,
       }}
     >
       {children}

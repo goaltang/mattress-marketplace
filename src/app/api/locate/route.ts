@@ -1,66 +1,175 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { resolveCitySlug, normalizeCityName } from "@/utils/geo";
+import { gaodeIpLocate, gaodeReverseGeocode } from "@/utils/geo/gaode";
 
-/**
- * 服务端智能 IP 定位接口（代客户端发起请求，规避跨域限制）
- *
- * 关键修复：
- * 1. 永远带客户端真实 IP 去查询（除非是本地回环）。
- *    之前 `!ip.startsWith("172.")` 会把 IANA 公网段 172.16.0.0/12 误判为内网，
- *    导致不传 IP、太平洋 API 退化为查服务器出口 IP（Vercel/Cloud Run 多为海外机房），
- *    表现为「城市永远不对」。
- * 2. 超时从 3s 提升到 5s，并加 1 次重试。
- */
-export async function GET(request: NextRequest) {
-  // 1. 解析客户端真实 IP（兼容多级代理）
+export interface LocateResult {
+  success: boolean;
+  slug: string;
+  name: string;
+  source: "h5" | "ip" | "none";
+  confidence: "high" | "medium" | "low";
+  reason?: string;
+}
+
+const TIMEOUT_MS = 5000;
+
+function getClientIp(request: NextRequest): string | null {
   let ip = request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip");
   if (ip && ip.includes(",")) {
     ip = ip.split(",")[0].trim();
   }
-
-  // 2. 剥掉 IPv6 映射的 IPv4 前缀（例如 ::ffff:1.2.3.4）
   if (ip && ip.startsWith("::ffff:")) {
     ip = ip.slice(7);
   }
+  if (!ip || ip === "::1" || ip === "127.0.0.1" || ip === "localhost") {
+    return null;
+  }
+  return ip;
+}
 
-  // 3. 判定是否为本地回环
-  const isLoopback =
-    !ip || ip === "::1" || ip === "127.0.0.1" || ip === "localhost";
+async function tryIpApi(ip: string | null): Promise<{ city: string; province: string } | null> {
+  try {
+    const url = ip
+      ? `http://ip-api.com/json/${encodeURIComponent(ip)}?lang=zh-CN&fields=status,message,city,regionName,query`
+      : `http://ip-api.com/json/?lang=zh-CN&fields=status,message,city,regionName,query`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+    const data = await res.json();
+    if (data.status === "success" && data.city) {
+      return { city: data.city, province: data.regionName || "" };
+    }
+  } catch {
+    /* 静默失败 */
+  }
+  return null;
+}
 
-  // 4. 组装查询 URL：本地走无参查询（让太平洋按本机出口 IP 解析，便于本地调试），
-  //    其余情况必须显式传用户 IP
-  const base = "http://whois.pconline.com.cn/ipJson.jsp";
-  const buildUrl = () =>
-    isLoopback
-      ? `${base}?json=true`
-      : `${base}?ip=${encodeURIComponent(ip!)}&json=true`;
+async function tryIpInfo(ip: string | null): Promise<{ city: string; province: string } | null> {
+  try {
+    const url = ip
+      ? `https://ipinfo.io/${encodeURIComponent(ip)}/json`
+      : `https://ipinfo.io/json`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+    const data = await res.json();
+    if (data.city) {
+      return { city: data.city, province: data.region || "" };
+    }
+  } catch {
+    /* 静默失败 */
+  }
+  return null;
+}
 
-  // 5. 最多重试 1 次（总 2 次）
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      const res = await fetch(buildUrl(), {
-        signal: AbortSignal.timeout(5000),
-        headers: { Accept: "application/json" },
-      });
-      const text = await res.text();
-      // 太平洋偶发返回 BOM/多余空白
-      const clean = text.replace(/^\uFEFF/, "").trim();
-      const data = JSON.parse(clean);
+async function ipLocate(ip: string | null): Promise<{ city: string; province: string } | null> {
+  // 1. 国内高德 IP 定位（需配置 Key）
+  const gaodeKey = process.env.GAODE_IP_KEY;
+  if (gaodeKey) {
+    const gaodeResult = await gaodeIpLocate(ip, gaodeKey);
+    if (gaodeResult) return gaodeResult;
+  }
+
+  // 2. ip-api
+  const ipApiResult = await tryIpApi(ip);
+  if (ipApiResult) return ipApiResult;
+
+  // 3. ipinfo.io
+  const ipInfoResult = await tryIpInfo(ip);
+  if (ipInfoResult) return ipInfoResult;
+
+  return null;
+}
+
+export async function GET(request: NextRequest) {
+  const { searchParams } = new URL(request.url);
+  const source = searchParams.get("source") || "auto";
+  const lat = searchParams.get("lat");
+  const lng = searchParams.get("lng");
+  const ip = getClientIp(request);
+
+  // H5 模式：使用客户端经纬度
+  if (source === "h5" && lat && lng) {
+    const latitude = parseFloat(lat);
+    const longitude = parseFloat(lng);
+
+    if (!isNaN(latitude) && !isNaN(longitude)) {
+      const gaodeKey = process.env.GAODE_REGEO_KEY || process.env.GAODE_IP_KEY;
+      let locatedCity = "";
+
+      if (gaodeKey) {
+        const raw = await gaodeReverseGeocode(latitude, longitude, gaodeKey);
+        if (raw?.city) {
+          locatedCity = normalizeCityName(raw.city);
+        }
+      }
+
+      const slug = locatedCity ? resolveCitySlug(locatedCity) : null;
+      if (slug) {
+        return NextResponse.json({
+          success: true,
+          slug,
+          name: locatedCity,
+          source: "h5",
+          confidence: "high",
+        } satisfies LocateResult);
+      }
+
+      // H5 解析失败则降级到 IP 定位
+      const fallback = await ipLocate(ip);
+      if (fallback) {
+        const fallbackName = normalizeCityName(fallback.city);
+        const fallbackSlug = resolveCitySlug(fallbackName);
+        if (fallbackSlug) {
+          return NextResponse.json({
+            success: true,
+            slug: fallbackSlug,
+            name: fallbackName,
+            source: "ip",
+            confidence: "medium",
+            reason: "h5_reverse_geocode_failed",
+          } satisfies LocateResult);
+        }
+      }
 
       return NextResponse.json({
-        success: true,
-        city: data.city || "",
-        province: data.pro || "",
-        ip: isLoopback ? null : ip,
-      });
-    } catch (err) {
-      if (attempt === 1) {
-        console.error("太平洋 IP 定位服务请求失败:", err);
-        return NextResponse.json({ success: false, city: "", province: "" });
-      }
-      // 第一次失败时短暂等待再重试
-      await new Promise((r) => setTimeout(r, 300));
+        success: false,
+        slug: "",
+        name: "",
+        source: "none",
+        confidence: "low",
+        reason: "h5_city_not_supported",
+      } satisfies LocateResult);
     }
   }
 
-  return NextResponse.json({ success: false, city: "", province: "" });
+  // IP 模式 / auto 模式
+  const result = await ipLocate(ip);
+  if (result) {
+    const name = normalizeCityName(result.city);
+    const slug = resolveCitySlug(name);
+    if (slug) {
+      return NextResponse.json({
+        success: true,
+        slug,
+        name,
+        source: "ip",
+        confidence: "medium",
+      } satisfies LocateResult);
+    }
+    return NextResponse.json({
+      success: false,
+      slug: "",
+      name: "",
+      source: "ip",
+      confidence: "low",
+      reason: "ip_city_not_supported",
+    } satisfies LocateResult);
+  }
+
+  return NextResponse.json({
+    success: false,
+    slug: "",
+    name: "",
+    source: "none",
+    confidence: "low",
+    reason: "all_locate_methods_failed",
+  } satisfies LocateResult);
 }
