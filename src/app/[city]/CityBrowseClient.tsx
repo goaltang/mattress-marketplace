@@ -11,6 +11,7 @@ import Footer from "@/components/Footer";
 import ListingCard from "@/components/ListingCard";
 import ListingCardSkeleton from "@/components/ListingCardSkeleton";
 import CityChooseModal from "@/components/CityChooseModal";
+import LocationPrompt from "@/components/LocationPrompt";
 import FilterSheet from "@/components/FilterSheet";
 import PriceRangeSlider from "@/components/PriceRangeSlider";
 import EmptyState from "@/components/EmptyState";
@@ -182,6 +183,9 @@ function CityBrowseInner({ citySlug, initialListings, verifiedCount = 0 }: CityB
     unreadNotifCount,
     changeCity,
     syncRouteCity,
+    suggestedCity,
+    showLocationPrompt,
+    dismissLocationPrompt,
   } = useAppContext();
 
   const cityInfo = getCityInfo(citySlug);
@@ -1018,6 +1022,14 @@ function CityBrowseInner({ citySlug, initialListings, verifiedCount = 0 }: CityB
       </main>
 
       <Footer currentCity={citySlug} />
+
+      {showLocationPrompt && suggestedCity && (
+        <LocationPrompt
+          cityName={suggestedCity.name}
+          onConfirm={() => changeCity(suggestedCity.slug)}
+          onDismiss={dismissLocationPrompt}
+        />
+      )}
 
       {showCityModal && (
         <CityChooseModal

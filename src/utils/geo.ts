@@ -5,8 +5,8 @@ import { ALL_CITIES } from "@/config/cities";
  * 优先级：精准名 > 名包含关系（如 "杭州市" → "杭州"）。
  * 命中 ALL_CITIES 即返回 slug，解析失败返回 null。
  */
-export function resolveCitySlug(rawCity: string): string | null {
-  if (!rawCity) return null;
+export function resolveCitySlug(rawCity: unknown): string | null {
+  if (typeof rawCity !== "string" || !rawCity) return null;
   const cleaned = rawCity.replace(/市$/, "").trim();
 
   // 1. 精准匹配（去除「市」后等于配置中的汉字名）
@@ -33,12 +33,12 @@ export function resolveCitySlug(rawCity: string): string | null {
  * 把地理服务返回的原始城市名标准化为项目内的汉字城市名。
  * 无法识别时返回去除「市」后的原始字符串。
  */
-export function normalizeCityName(raw: string): string {
-  if (!raw) return "";
+export function normalizeCityName(raw: unknown): string {
+  if (typeof raw !== "string" || !raw) return "";
   const slug = resolveCitySlug(raw);
   if (slug) {
     const city = ALL_CITIES.find((c) => c.slug === slug);
-    return city?.name || raw;
+    return city?.name || raw.replace(/市$/, "").trim();
   }
   return raw.replace(/市$/, "").trim();
 }
