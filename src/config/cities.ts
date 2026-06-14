@@ -5,12 +5,50 @@ export interface City {
   name: string;
   slug: string;
   pinyin: string;
+  pinyinFull?: string;
+  region?: string;
   isHot?: boolean;
   districtLabel?: string;
+  isActive?: boolean;
 }
 
 // 直辖市列表（在 china-division 的 pc key 中）
 const MUNICIPALITIES = new Set(["北京市", "天津市", "上海市", "重庆市"]);
+
+// 省份到地理大区的映射（用于城市数据后端化时的 region 字段）
+export const PROVINCE_REGION_MAP: Record<string, string> = {
+  北京市: "华北",
+  天津市: "华北",
+  河北省: "华北",
+  山西省: "华北",
+  内蒙古自治区: "华北",
+  上海市: "华东",
+  江苏省: "华东",
+  浙江省: "华东",
+  安徽省: "华东",
+  福建省: "华东",
+  江西省: "华东",
+  山东省: "华东",
+  广东省: "华南",
+  广西壮族自治区: "华南",
+  海南省: "华南",
+  河南省: "华中",
+  湖北省: "华中",
+  湖南省: "华中",
+  重庆市: "西南",
+  四川省: "西南",
+  贵州省: "西南",
+  云南省: "西南",
+  西藏自治区: "西南",
+  陕西省: "西北",
+  甘肃省: "西北",
+  青海省: "西北",
+  宁夏回族自治区: "西北",
+  新疆维吾尔自治区: "西北",
+  辽宁省: "东北",
+  吉林省: "东北",
+  黑龙江省: "东北",
+};
 
 // 中国少数民族名称，用于从自治州全称中提取地名前缀
 const ETHNIC_GROUPS =
@@ -56,19 +94,40 @@ function generatePinyin(name: string): string {
     .toLowerCase();
 }
 
+function generatePinyinFull(name: string): string {
+  return pinyin(name, { toneType: "none", type: "array" })
+    .join(" ")
+    .toLowerCase();
+}
+
+export interface CityRecord extends City {
+  province: string;
+}
+
 /**
  * 从 china-division 生成全国城市列表。
  * 覆盖直辖市、地级市、自治州、盟、地区。
  */
-function generateCitiesFromDatabase(): City[] {
-  const cities: City[] = [];
+export function generateCitiesFromDatabase(): CityRecord[] {
+  const cities: CityRecord[] = [];
 
   Object.entries(pc).forEach(([provinceName, cityNames]) => {
+    const region = PROVINCE_REGION_MAP[provinceName];
+
     if (MUNICIPALITIES.has(provinceName)) {
       // 直辖市：省份名即城市名
       const name = provinceName.replace(/市$/, "");
       const slug = generateSlug(provinceName);
-      cities.push({ name, slug, pinyin: slug });
+      const py = generatePinyin(provinceName);
+      cities.push({
+        name,
+        slug,
+        pinyin: py || slug,
+        pinyinFull: generatePinyinFull(name),
+        region,
+        province: provinceName,
+        isActive: true,
+      });
       return;
     }
 
@@ -84,7 +143,15 @@ function generateCitiesFromDatabase(): City[] {
       // 避免空 slug
       if (!slug) return;
 
-      cities.push({ name, slug, pinyin: py });
+      cities.push({
+        name,
+        slug,
+        pinyin: py,
+        pinyinFull: generatePinyinFull(rawName),
+        region,
+        province: provinceName,
+        isActive: true,
+      });
     });
   });
 
@@ -117,11 +184,14 @@ export const HOT_CITIES: City[] = [
 
 // 兜底城市：china-division 全国城市数据 + 热门城市覆盖
 const DB_CITIES = generateCitiesFromDatabase();
-const HOT_CITY_SLUGS = new Set(HOT_CITIES.map((c) => c.slug));
+const HOT_CITY_MAP = new Map(HOT_CITIES.map((c) => [c.slug, c]));
 
 export const ALL_CITIES: City[] = [
-  ...HOT_CITIES,
-  ...DB_CITIES.filter((c) => !HOT_CITY_SLUGS.has(c.slug)),
+  ...HOT_CITIES.map((c) => ({ ...c, isActive: c.isActive ?? true })),
+  ...DB_CITIES.filter((c) => !HOT_CITY_MAP.has(c.slug)).map((c) => ({
+    ...c,
+    isActive: c.isActive ?? true,
+  })),
 ];
 
 /**

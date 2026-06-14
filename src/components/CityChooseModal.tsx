@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect } from "react";
 import { MapPin, Search, X, Check, RefreshCw } from "lucide-react";
-import { HOT_CITIES, searchCities, City } from "@/config/cities";
+import { HOT_CITIES, City } from "@/config/cities";
+import { fetchCities } from "@/lib/cities-client";
 import { useGeolocation, type GeolocationErrorCode } from "@/hooks/useGeolocation";
 
 interface CityChooseModalProps {
@@ -21,7 +22,54 @@ export default function CityChooseModal({
   const [isLocating, setIsLocating] = useState(false);
   const [locateError, setLocateError] = useState<string | null>(null);
   const [locateDebug, setLocateDebug] = useState<string | null>(null);
+  const [cities, setCities] = useState<City[]>([]);
+  const [isLoadingCities, setIsLoadingCities] = useState(true);
   const { locate: h5Locate, error: h5Error } = useGeolocation();
+
+  const hotCities = cities.length > 0
+    ? cities.filter((c) => c.isHot)
+    : HOT_CITIES;
+
+  const displayedCities = cities.length > 0 ? cities : HOT_CITIES;
+
+  const searchCities = React.useCallback(
+    (query: string): City[] => {
+      if (!query.trim()) return [];
+      const cleanQuery = query.trim().toLowerCase();
+      return displayedCities.filter(
+        (c) =>
+          c.name.toLowerCase().includes(cleanQuery) ||
+          c.pinyin.toLowerCase().startsWith(cleanQuery) ||
+          c.slug.toLowerCase().startsWith(cleanQuery)
+      );
+    },
+    [displayedCities]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetchCities({ activeOnly: true, limit: 500 })
+      .then((result) => {
+        if (cancelled) return;
+        if (result.success && result.cities && result.cities.length > 0) {
+          setCities(result.cities);
+        } else {
+          console.warn("[CityChooseModal] 从 API 获取城市失败，使用静态数据:", result.error);
+        }
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.warn("[CityChooseModal] 获取城市数据失败:", err);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingCities(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (searchQuery.trim()) {
@@ -29,7 +77,7 @@ export default function CityChooseModal({
     } else {
       setSearchResults([]);
     }
-  }, [searchQuery]);
+  }, [searchQuery, cities, searchCities]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -253,7 +301,12 @@ export default function CityChooseModal({
               热门城市快选 Selected Cities
             </label>
             <div className="grid grid-cols-4 gap-2" role="radiogroup" aria-label="热门城市">
-              {HOT_CITIES.map((city) => {
+              {isLoadingCities ? (
+                <div className="col-span-4 text-center py-4 text-xs text-gray-400">
+                  加载城市中...
+                </div>
+              ) : (
+                hotCities.map((city) => {
                 const isActive = city.slug === currentCity.toLowerCase();
                 return (
                   <button
@@ -273,7 +326,8 @@ export default function CityChooseModal({
                     </div>
                   </button>
                 );
-              })}
+              })
+              )}
             </div>
           </div>
         </div>

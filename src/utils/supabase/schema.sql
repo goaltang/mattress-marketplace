@@ -122,3 +122,27 @@ CREATE POLICY "Users can update own notifications" ON public.notifications
 
 CREATE POLICY "Users can delete own notifications" ON public.notifications
     FOR DELETE USING (device_id = public.get_device_id());
+
+
+-- 4. 城市数据表 (cities)
+CREATE TABLE IF NOT EXISTS public.cities (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    slug TEXT NOT NULL UNIQUE,
+    pinyin TEXT NOT NULL,
+    pinyin_full TEXT,
+    region TEXT,
+    is_hot BOOLEAN DEFAULT false,
+    district_label TEXT,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_cities_slug ON public.cities(slug);
+CREATE INDEX IF NOT EXISTS idx_cities_is_active ON public.cities(is_active);
+CREATE INDEX IF NOT EXISTS idx_cities_is_hot ON public.cities(is_hot);
+
+ALTER TABLE public.cities ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Allow public read access to cities" ON public.cities
+    FOR SELECT USING (true);

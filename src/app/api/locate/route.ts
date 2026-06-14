@@ -1,6 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { resolveCitySlug, normalizeCityName } from "@/utils/geo";
 import { gaodeIpLocate, gaodeReverseGeocode } from "@/utils/geo/gaode";
+import { createPublicClient } from "@/utils/supabase/public";
+import { isSupabaseConfigured } from "@/utils/db";
+import { getCities } from "@/lib/cities-db";
+import { City } from "@/config/cities";
 
 export interface LocateResult {
   success: boolean;
@@ -12,6 +16,26 @@ export interface LocateResult {
 }
 
 const TIMEOUT_MS = 5000;
+
+async function loadActiveCities(): Promise<City[]> {
+  if (!isSupabaseConfigured()) {
+    const { ALL_CITIES } = await import("@/config/cities");
+    return ALL_CITIES.filter((c) => c.isActive !== false);
+  }
+
+  try {
+    const supabase = createPublicClient();
+    const result = await getCities(supabase, { activeOnly: true, limit: 500 });
+    if (result.success && result.cities && result.cities.length > 0) {
+      return result.cities;
+    }
+  } catch (err) {
+    console.error("[locate] 从 Supabase 加载 cities 失败:", err);
+  }
+
+  const { ALL_CITIES } = await import("@/config/cities");
+  return ALL_CITIES.filter((c) => c.isActive !== false);
+}
 
 function getClientIp(request: NextRequest): string | null {
   let ip = request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip");
@@ -109,6 +133,8 @@ export async function GET(request: NextRequest) {
   const lng = searchParams.get("lng");
   const ip = getClientIp(request);
 
+  const activeCities = await loadActiveCities();
+
   // H5 模式：使用客户端经纬度
   if (source === "h5" && lat && lng) {
     const latitude = parseFloat(lat);
@@ -121,16 +147,20 @@ export async function GET(request: NextRequest) {
       if (gaodeKey) {
         const raw = await gaodeReverseGeocode(latitude, longitude, gaodeKey);
         if (raw?.city) {
-          locatedCity = normalizeCityName(raw.city);
+          locatedCity = normalizeCityName(raw.city, activeCities);
         }
       }
 
-      const slug = locatedCity ? resolveCitySlug(locatedCity) : null;
+      const slug = locatedCity
+        ? resolveCitySlug(locatedCity, activeCities)
+        : null;
       if (slug) {
+        const displayName =
+          activeCities.find((c) => c.slug === slug)?.name || locatedCity;
         return NextResponse.json({
           success: true,
           slug,
-          name: locatedCity,
+          name: displayName,
           source: "h5",
           confidence: "high",
         } satisfies LocateResult);
@@ -139,13 +169,16 @@ export async function GET(request: NextRequest) {
       // H5 解析失败则降级到 IP 定位
       const fallback = await ipLocate(ip);
       if (fallback) {
-        const fallbackName = normalizeCityName(fallback.city);
-        const fallbackSlug = resolveCitySlug(fallbackName);
+        const fallbackName = normalizeCityName(fallback.city, activeCities);
+        const fallbackSlug = resolveCitySlug(fallbackName, activeCities);
         if (fallbackSlug) {
+          const displayName =
+            activeCities.find((c) => c.slug === fallbackSlug)?.name ||
+            fallbackName;
           return NextResponse.json({
             success: true,
             slug: fallbackSlug,
-            name: fallbackName,
+            name: displayName,
             source: "ip",
             confidence: "medium",
             reason: "h5_reverse_geocode_failed",
@@ -167,13 +200,15 @@ export async function GET(request: NextRequest) {
   // IP 模式 / auto 模式
   const result = await ipLocate(ip);
   if (result) {
-    const name = normalizeCityName(result.city);
-    const slug = resolveCitySlug(name);
+    const name = normalizeCityName(result.city, activeCities);
+    const slug = resolveCitySlug(name, activeCities);
     if (slug) {
+      const displayName =
+        activeCities.find((c) => c.slug === slug)?.name || name;
       return NextResponse.json({
         success: true,
         slug,
-        name,
+        name: displayName,
         source: "ip",
         confidence: "medium",
       } satisfies LocateResult);
