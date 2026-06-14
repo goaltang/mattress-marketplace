@@ -1,3 +1,6 @@
+import pc from "china-division/dist/pc.json";
+import { pinyin } from "pinyin-pro";
+
 export interface City {
   name: string;
   slug: string;
@@ -6,7 +9,89 @@ export interface City {
   districtLabel?: string;
 }
 
-// 热门城市 (20 个)
+// 直辖市列表（在 china-division 的 pc key 中）
+const MUNICIPALITIES = new Set(["北京市", "天津市", "上海市", "重庆市"]);
+
+// 中国少数民族名称，用于从自治州全称中提取地名前缀
+const ETHNIC_GROUPS =
+  "蒙古族|回族|藏族|维吾尔族|苗族|彝族|壮族|布依族|朝鲜族|满族|侗族|瑶族|白族|土家族|哈尼族|哈萨克族|傣族|黎族|傈僳族|佤族|畲族|高山族|拉祜族|水族|东乡族|纳西族|景颇族|柯尔克孜族|土族|达斡尔族|仫佬族|羌族|布朗族|撒拉族|毛南族|仡佬族|锡伯族|阿昌族|普米族|塔吉克族|怒族|乌孜别克族|俄罗斯族|鄂温克族|德昂族|保安族|裕固族|京族|塔塔尔族|独龙族|鄂伦春族|赫哲族|门巴族|珞巴族|基诺族";
+
+// 同名城市 slug 冲突处理（拼音相同但不同省份）
+const SLUG_OVERRIDES: Record<string, string> = {
+  "宿州市": "suzhou-ah",
+  "抚州市": "fuzhou-jx",
+  "泰州市": "taizhou-js",
+  "伊春市": "yichun-hlj",
+  "玉林市": "yulin-gx",
+};
+
+function generateSlug(rawName: string): string {
+  // 显式覆盖同名城市冲突
+  if (SLUG_OVERRIDES[rawName]) return SLUG_OVERRIDES[rawName];
+
+  // 1. 去掉行政区划后缀
+  let base = rawName
+    .replace(/自治州$/, "")
+    .replace(/地区$/, "")
+    .replace(/盟$/, "")
+    .replace(/市$/, "");
+
+  // 2. 自治州去掉民族后缀，保留地名前缀（如 "黔南布依族苗族" → "黔南"）
+  const ethnicRegex = new RegExp(`^(.+?)(?:${ETHNIC_GROUPS})`);
+  const match = base.match(ethnicRegex);
+  if (match) base = match[1];
+
+  // 3. 转拼音并清理
+  const py = pinyin(base, { toneType: "none", type: "array" })
+    .join("")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+
+  return py || rawName;
+}
+
+function generatePinyin(name: string): string {
+  return pinyin(name.replace(/[市州区盟县]$/, ""), { toneType: "none", type: "array" })
+    .join("")
+    .toLowerCase();
+}
+
+/**
+ * 从 china-division 生成全国城市列表。
+ * 覆盖直辖市、地级市、自治州、盟、地区。
+ */
+function generateCitiesFromDatabase(): City[] {
+  const cities: City[] = [];
+
+  Object.entries(pc).forEach(([provinceName, cityNames]) => {
+    if (MUNICIPALITIES.has(provinceName)) {
+      // 直辖市：省份名即城市名
+      const name = provinceName.replace(/市$/, "");
+      const slug = generateSlug(provinceName);
+      cities.push({ name, slug, pinyin: slug });
+      return;
+    }
+
+    cityNames.forEach((rawName) => {
+      // 过滤县、区、市辖区等县级/区级单位
+      if (/^(县|区|市辖区)$/.test(rawName)) return;
+      if (!/(市|州|盟|地区)$/.test(rawName)) return;
+
+      const name = rawName.replace(/市$/, "");
+      const slug = generateSlug(rawName);
+      const py = generatePinyin(rawName);
+
+      // 避免空 slug
+      if (!slug) return;
+
+      cities.push({ name, slug, pinyin: py });
+    });
+  });
+
+  return cities;
+}
+
+// 热门城市（保留人工维护的 districtLabel 与运营属性）
 export const HOT_CITIES: City[] = [
   { name: "北京", slug: "beijing", pinyin: "beijing", isHot: true, districtLabel: "朝阳与海淀" },
   { name: "上海", slug: "shanghai", pinyin: "shanghai", isHot: true, districtLabel: "浦东与静安" },
@@ -30,51 +115,13 @@ export const HOT_CITIES: City[] = [
   { name: "郑州", slug: "zhengzhou", pinyin: "zhengzhou", isHot: true, districtLabel: "金水与二七" },
 ];
 
-// 兜底的全国主要三四线城市列表 (用于模糊搜索匹配)
+// 兜底城市：china-division 全国城市数据 + 热门城市覆盖
+const DB_CITIES = generateCitiesFromDatabase();
+const HOT_CITY_SLUGS = new Set(HOT_CITIES.map((c) => c.slug));
+
 export const ALL_CITIES: City[] = [
   ...HOT_CITIES,
-  { name: "无锡", slug: "wuxi", pinyin: "wuxi" },
-  { name: "徐州", slug: "xuzhou", pinyin: "xuzhou" },
-  { name: "常州", slug: "changzhou", pinyin: "changzhou" },
-  { name: "南通", slug: "nantong", pinyin: "nantong" },
-  { name: "温州", slug: "wenzhou", pinyin: "wenzhou" },
-  { name: "绍兴", slug: "shaoxing", pinyin: "shaoxing" },
-  { name: "嘉兴", slug: "jiaxing", pinyin: "jiaxing" },
-  { name: "金华", slug: "jinhua", pinyin: "jinhua" },
-  { name: "台州", slug: "taizhou", pinyin: "taizhou" },
-  { name: "扬州", slug: "yangzhou", pinyin: "yangzhou" },
-  { name: "泰州", slug: "taizhou-js", pinyin: "taizhou" },
-  { name: "盐城", slug: "yancheng", pinyin: "yancheng" },
-  { name: "临沂", slug: "linyi", pinyin: "linyi" },
-  { name: "潍坊", slug: "weifang", pinyin: "weifang" },
-  { name: "烟台", slug: "yantai", pinyin: "yantai" },
-  { name: "济南", slug: "jinan", pinyin: "jinan" },
-  { name: "泉州", slug: "quanzhou", pinyin: "quanzhou" },
-  { name: "福州", slug: "fuzhou", pinyin: "fuzhou" },
-  { name: "厦门", slug: "xiamen", pinyin: "xiamen" },
-  { name: "南昌", slug: "nanchang", pinyin: "nanchang" },
-  { name: "赣州", slug: "ganzhou", pinyin: "ganzhou" },
-  { name: "九江", slug: "jiujiang", pinyin: "jiujiang" },
-  { name: "石家庄", slug: "shijiazhuang", pinyin: "shijiazhuang" },
-  { name: "唐山", slug: "tangshan", pinyin: "tangshan" },
-  { name: "保定", slug: "baoding", pinyin: "baoding" },
-  { name: "邯郸", slug: "handan", pinyin: "handan" },
-  { name: "太原", slug: "taiyuan", pinyin: "taiyuan" },
-  { name: "大同", slug: "datong", pinyin: "datong" },
-  { name: "哈尔滨", slug: "haerbin", pinyin: "haerbin" },
-  { name: "长春", slug: "changchun", pinyin: "changchun" },
-  { name: "大连", slug: "dalian", pinyin: "dalian" },
-  { name: "昆明", slug: "kunming", pinyin: "kunming" },
-  { name: "贵阳", slug: "guiyang", pinyin: "guiyang" },
-  { name: "南宁", slug: "nanning", pinyin: "nanning" },
-  { name: "海口", slug: "haikou", pinyin: "haikou" },
-  { name: "三亚", slug: "sanya", pinyin: "sanya" },
-  { name: "兰州", slug: "lanzhou", pinyin: "lanzhou" },
-  { name: "西宁", slug: "xining", pinyin: "xining" },
-  { name: "银川", slug: "yinchuan", pinyin: "yinchuan" },
-  { name: "乌鲁木齐", slug: "wulumuqi", pinyin: "wulumuqi" },
-  { name: "呼和浩特", slug: "huhehaote", pinyin: "huhehaote" },
-  { name: "包头", slug: "baotou", pinyin: "baotou" },
+  ...DB_CITIES.filter((c) => !HOT_CITY_SLUGS.has(c.slug)),
 ];
 
 /**
@@ -106,49 +153,48 @@ export function getCityInfo(slug: string): City | undefined {
 /**
  * 按地理大区分组的城市列表。
  * 用于城市选择器按区域浏览等未来扩展场景。
- * 注意：分组中的 City 对象与 ALL_CITIES 中为同一引用。
  */
 export const CITY_GROUPS: { name: string; cities: City[] }[] = [
   {
     name: "华北",
     cities: ALL_CITIES.filter((c) =>
-      ["beijing", "tianjin", "shijiazhuang", "tangshan", "baoding", "handan", "taiyuan", "datong", "huhehaote", "baotou"].includes(c.slug)
+      ["beijing", "tianjin", "shijiazhuang", "tangshan", "qinhuangdao", "baoding", "handan", "xingtai", "zhangjiakou", "chengde", "cangzhou", "langfang", "hengshui", "taiyuan", "datong", "yangquan", "changzhi", "jincheng", "shuozhou", "jinzhong", "yuncheng", "xinzhou", "linfen", "lvliang", "huhehaote", "baotou", "wuhai", "chifeng", "tongliao", "eerduosi", "hulunbeier", "bayannaoer", "wulanchabu"].includes(c.slug)
     ),
   },
   {
     name: "华东",
     cities: ALL_CITIES.filter((c) =>
-      ["shanghai", "hangzhou", "nanjing", "suzhou", "ningbo", "wuxi", "xuzhou", "changzhou", "nantong", "wenzhou", "shaoxing", "jiaxing", "jinhua", "taizhou", "yangzhou", "taizhou-js", "yancheng", "jinan", "qingdao", "yantai", "weifang", "linyi", "fuzhou", "xiamen", "quanzhou", "hefei"].includes(c.slug)
+      ["shanghai", "hangzhou", "nanjing", "suzhou", "ningbo", "wuxi", "xuzhou", "changzhou", "nantong", "lianyungang", "huaian", "yancheng", "yangzhou", "zhenjiang", "taizhou-js", "suqian", "wenzhou", "shaoxing", "jiaxing", "huzhou", "jinhua", "taizhou", "quzhou", "zhoushan", "lishui", "hefei", "wuhu", "bengbu", "huainan", "maanshan", "huaibei", "tongling", "anqing", "huangshan", "chuzhou", "fuyang", "suzhou-ah", "luan", "bozhou", "chizhou", "xuancheng", "fuzhou", "xiamen", "putian", "sanming", "quanzhou", "zhangzhou", "nanping", "longyan", "ningde", "nanchang", "jingdezhen", "pingxiang", "jiujiang", "xinyu", "yingtan", "ganzhou", "jian", "yichun", "fuzhou-jx", "shangrao"].includes(c.slug)
     ),
   },
   {
     name: "华南",
     cities: ALL_CITIES.filter((c) =>
-      ["guangzhou", "shenzhen", "foshan", "dongguan", "nanning", "haikou", "sanya"].includes(c.slug)
+      ["guangzhou", "shenzhen", "foshan", "dongguan", "shaoguan", "zhuhai", "shantou", "jiangmen", "zhanjiang", "maoming", "zhaoqing", "huizhou", "meizhou", "shanwei", "heyuan", "yangjiang", "qingyuan", "zhongshan", "chaozhou", "jieyang", "yunfu", "nanning", "liuzhou", "guilin", "wuzhou", "beihai", "fangchenggang", "qinzhou", "guigang", "yulin-gx", "baise", "hezhou", "hechi", "laibin", "chongzuo", "haikou", "sanya", "sansha", "danzhou"].includes(c.slug)
     ),
   },
   {
     name: "华中",
     cities: ALL_CITIES.filter((c) =>
-      ["wuhan", "changsha", "zhengzhou", "nanchang", "ganzhou", "jiujiang"].includes(c.slug)
+      ["wuhan", "huangshi", "shiyan", "yichang", "xiangyang", "ezhou", "jingmen", "xiaogan", "jingzhou", "huanggang", "xianning", "suizhou", "enshi", "xiangtan", "zhuzhou", "hengyang", "shaoyang", "yueyang", "changde", "zhangjiajie", "yiyang", "chenzhou", "yongzhou", "huaihua", "loudi", "xiangxi", "zhengzhou", "kaifeng", "luoyang", "pingdingshan", "anyang", "hebi", "xinxiang", "jiaozuo", "puyang", "xuchang", "luohe", "sanmenxia", "nanyang", "shangqiu", "xinyang", "zhoukou", "zhumadian", "jiyuan"].includes(c.slug)
     ),
   },
   {
     name: "西南",
     cities: ALL_CITIES.filter((c) =>
-      ["chengdu", "chongqing", "kunming", "guiyang"].includes(c.slug)
+      ["chengdu", "zigong", "panzhihua", "luzhou", "deyang", "mianyang", "guangyuan", "suining", "neijiang", "leshan", "nanchong", "meishan", "yibin", "guangan", "dazhou", "yaan", "bazhong", "ziyang", "aba", "ganzi", "liangshan", "chongqing", "kunming", "qujing", "yuxi", "baoshan", "zhaotong", "lijiang", "puer", "lincang", "chuxiong", "honghe", "wenshan", "xishuangbanna", "dali", "dehong", "nujiang", "diqing", "guiyang", "zunyi", "liupanshui", "anshun", "bijie", "tongren", "qianxinan", "qiandongnan", "qiannan", "lasa", "rikaze", "changdu", "linzhi", "shannan", "naqu", "ali"].includes(c.slug)
     ),
   },
   {
     name: "西北",
     cities: ALL_CITIES.filter((c) =>
-      ["xian", "lanzhou", "xining", "yinchuan", "wulumuqi"].includes(c.slug)
+      ["xian", "tongchuan", "baoji", "xianyang", "weinan", "yanan", "hanzhong", "yulin", "ankang", "shangluo", "lanzhou", "jiayuguan", "jinchang", "baiyin", "tianshui", "wuwei", "zhangye", "pingliang", "jiuquan", "qingyang", "dingxi", "longnan", "linxia", "gannan", "xining", "haidong", "haibei", "huangnan", "hainan-qh", "guoluo", "yushu", "haixi", "yinchuan", "shizuishan", "wuzhong", "guyuan", "zhongwei", "wulumuqi", "kelamayi", "tulufan", "hami", "changji", "boertala", "bayinguoleng", "akesu", "kezileisu", "kashi", "hetian", "yili", "tacheng", "aletai"].includes(c.slug)
     ),
   },
   {
     name: "东北",
     cities: ALL_CITIES.filter((c) =>
-      ["shenyang", "dalian", "changchun", "haerbin"].includes(c.slug)
+      ["shenyang", "dalian", "anshan", "fushun", "benxi", "dandong", "jinzhou", "yingkou", "fuxin", "liaoyang", "panjin", "tieling", "chaoyang", "huludao", "changchun", "jilin", "siping", "liaoyuan", "tonghua", "baishan", "songyuan", "baicheng", "yanbian", "haerbin", "qiqihaer", "jixi", "hegang", "shuangyashan", "daqing", "yichun-hlj", "jiamusi", "qitaihe", "mudanjiang", "heihe", "suihua", "daxinganling"].includes(c.slug)
     ),
   },
 ];
