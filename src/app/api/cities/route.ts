@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createPublicClient } from "@/utils/supabase/public";
 import { isSupabaseConfigured } from "@/utils/db";
-import { getCities } from "@/lib/cities-db";
+import { queryCities } from "@/lib/city-cache";
 import { ALL_CITIES, searchCities as staticSearchCities } from "@/config/cities";
 
 export async function GET(request: NextRequest) {
@@ -16,8 +15,7 @@ export async function GET(request: NextRequest) {
 
   if (configured) {
     try {
-      const supabase = createPublicClient();
-      const result = await getCities(supabase, {
+      const cities = await queryCities({
         activeOnly,
         hotOnly,
         region: region || undefined,
@@ -25,21 +23,20 @@ export async function GET(request: NextRequest) {
         limit,
       });
 
-      if (result.success && result.cities) {
+      if (cities.length > 0) {
         return NextResponse.json({
           success: true,
-          cities: result.cities,
+          cities,
           source: "supabase",
         });
       }
 
-      console.error("从 Supabase 查询 cities 失败，降级到静态数据:", result.error);
+      console.error("从 Supabase 查询 cities 为空，降级到静态数据");
     } catch (err) {
       console.error("连接 Supabase 查询 cities 失败，降级到静态数据:", err);
     }
   }
 
-  // Fallback：使用本地静态数据
   let cities = ALL_CITIES;
   if (activeOnly) {
     cities = cities.filter((c) => c.isActive !== false);

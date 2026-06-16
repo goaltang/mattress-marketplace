@@ -3,8 +3,9 @@
 import React, { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { MapPin, Plus, Bell, User, Sun, Moon } from "lucide-react";
+import { MapPin, Plus, Bell, User, Sun, Moon, Loader2 } from "lucide-react";
 import { getCityName } from "@/config/cities";
+import { useAppContext } from "@/context/AppContext";
 
 interface HeaderProps {
   currentCity: string;
@@ -53,6 +54,7 @@ function HeaderContent({
 }: HeaderProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const { isLocating } = useAppContext();
   const tab = searchParams.get("tab");
 
   const citySlug = currentCity.toLowerCase();
@@ -79,10 +81,14 @@ function HeaderContent({
             <button
               onClick={onCityClick}
               className="group flex items-center gap-2 text-[15px] font-medium text-gray-800 dark:text-gray-200 hover:text-black dark:hover:text-white transition-colors cursor-pointer border-0 bg-transparent p-0"
-              aria-label={`当前城市：${cityZh}，点击切换`}
+              aria-label={isLocating ? "正在定位城市..." : `当前城市：${cityZh}，点击切换`}
             >
-              <MapPin className="w-4 h-4 text-gray-400 dark:text-gray-500 group-hover:text-black dark:group-hover:text-white transition-colors" />
-              <span>{cityZh}</span>
+              {isLocating ? (
+                <Loader2 className="w-4 h-4 animate-spin text-gray-400 dark:text-gray-500" />
+              ) : (
+                <MapPin className="w-4 h-4 text-gray-400 dark:text-gray-500 group-hover:text-black dark:group-hover:text-white transition-colors" />
+              )}
+              <span className={isLocating ? "text-gray-400 dark:text-gray-500" : ""}>{isLocating ? "定位中" : cityZh}</span>
               <span className="text-[11px] text-gray-400 dark:text-gray-500 group-hover:text-black dark:group-hover:text-white bg-gray-100 dark:bg-neutral-800 group-hover:bg-gray-200 dark:group-hover:bg-neutral-700 px-1.5 py-0.5 rounded transition-all select-none">
                 切换
               </span>
@@ -155,10 +161,14 @@ function HeaderContent({
         <button
           onClick={onCityClick}
           className="flex items-center gap-1 cursor-pointer border-0 bg-transparent p-0 text-gray-600 dark:text-gray-400"
-          aria-label={`当前城市：${cityZh}`}
+          aria-label={isLocating ? "正在定位城市..." : `当前城市：${cityZh}`}
         >
-          <MapPin className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500" />
-          <span>{cityZh}</span>
+          {isLocating ? (
+            <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-400 dark:text-gray-500" />
+          ) : (
+            <MapPin className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500" />
+          )}
+          <span>{isLocating ? "定位中" : cityZh}</span>
         </button>
         <Link
           href="/post"

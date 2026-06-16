@@ -16,11 +16,15 @@ export function resolveCitySlug(
   const exact = cities.find((c) => c.name === cleaned);
   if (exact) return exact.slug;
 
-  // 2. 包含匹配（地理服务可能返回 "杭州市萧山区" 这种带区县的字符串）
-  const contains = cities.find(
-    (c) => cleaned.includes(c.name) || c.name.includes(cleaned)
-  );
-  if (contains) return contains.slug;
+  // 2. 包含匹配（至少 2 字且城市名至少 2 字，避免短名误匹配）
+  if (cleaned.length >= 2) {
+    const contains = cities.find(
+      (c) =>
+        c.name.length >= 2 &&
+        (cleaned.includes(c.name) || c.name.includes(cleaned))
+    );
+    if (contains) return contains.slug;
+  }
 
   // 3. 拼音 / slug 匹配
   const lower = cleaned.toLowerCase();

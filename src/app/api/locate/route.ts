@@ -1,10 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { resolveCitySlug, normalizeCityName } from "@/utils/geo";
 import { gaodeIpLocate, gaodeReverseGeocode } from "@/utils/geo/gaode";
-import { createPublicClient } from "@/utils/supabase/public";
-import { isSupabaseConfigured } from "@/utils/db";
-import { getCities } from "@/lib/cities-db";
-import { City } from "@/config/cities";
+import { loadActiveCities } from "@/lib/city-cache";
 
 export interface LocateResult {
   success: boolean;
@@ -16,26 +13,17 @@ export interface LocateResult {
 }
 
 const TIMEOUT_MS = 5000;
+const IP_CACHE_TTL = 60 * 60 * 1000;
+const IP_CACHE_MAX = 1000;
 
-async function loadActiveCities(): Promise<City[]> {
-  if (!isSupabaseConfigured()) {
-    const { ALL_CITIES } = await import("@/config/cities");
-    return ALL_CITIES.filter((c) => c.isActive !== false);
-  }
-
-  try {
-    const supabase = createPublicClient();
-    const result = await getCities(supabase, { activeOnly: true, limit: 500 });
-    if (result.success && result.cities && result.cities.length > 0) {
-      return result.cities;
-    }
-  } catch (err) {
-    console.error("[locate] 从 Supabase 加载 cities 失败:", err);
-  }
-
-  const { ALL_CITIES } = await import("@/config/cities");
-  return ALL_CITIES.filter((c) => c.isActive !== false);
+interface IpLocateResult {
+  city: string;
+  province: string;
+  rawCity: string;
+  service: "gaode" | "ip-api" | "ipinfo";
 }
+
+const ipCache = new Map<string, { data: IpLocateResult; ts: number }>();
 
 function getClientIp(request: NextRequest): string | null {
   let ip = request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip");
@@ -54,8 +42,8 @@ function getClientIp(request: NextRequest): string | null {
 async function tryIpApi(ip: string | null): Promise<{ city: string; province: string; rawCity: string } | null> {
   try {
     const url = ip
-      ? `http://ip-api.com/json/${encodeURIComponent(ip)}?lang=zh-CN&fields=status,message,city,regionName,query`
-      : `http://ip-api.com/json/?lang=zh-CN&fields=status,message,city,regionName,query`;
+      ? `https://ip-api.com/json/${encodeURIComponent(ip)}?lang=zh-CN&fields=status,message,city,regionName,query`
+      : `https://ip-api.com/json/?lang=zh-CN&fields=status,message,city,regionName,query`;
     const res = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
     const data = await res.json();
     if (data.status === "success" && data.city) {
@@ -83,47 +71,59 @@ async function tryIpInfo(ip: string | null): Promise<{ city: string; province: s
   return null;
 }
 
-interface IpLocateResult {
-  city: string;
-  province: string;
-  rawCity: string;
-  service: "gaode" | "ip-api" | "ipinfo";
-}
-
 async function ipLocate(ip: string | null): Promise<IpLocateResult | null> {
   const isDev = process.env.NODE_ENV !== "production";
   const log = (msg: string) => {
     if (isDev) console.log(`[locate] ${msg}`);
   };
 
-  // 1. 国内高德 IP 定位（需配置 Key）
+  const cacheKey = ip || "__no_ip__";
+  const now = Date.now();
+  const cached = ipCache.get(cacheKey);
+  if (cached && now - cached.ts < IP_CACHE_TTL) {
+    log(`cache hit: ${cached.data.city} (${cached.data.service})`);
+    return cached.data;
+  }
+
+  const candidates: Promise<IpLocateResult>[] = [];
+
   const gaodeKey = process.env.GAODE_IP_KEY;
   if (gaodeKey) {
-    const gaodeResult = await gaodeIpLocate(ip, gaodeKey);
-    if (gaodeResult?.city) {
-      log(`gaode ok: ${gaodeResult.city}`);
-      return { ...gaodeResult, rawCity: gaodeResult.city, service: "gaode" };
+    candidates.push(
+      gaodeIpLocate(ip, gaodeKey).then((r) => {
+        if (r?.city) return { ...r, rawCity: r.city, service: "gaode" as const };
+        throw new Error("gaode empty");
+      })
+    );
+  }
+
+  candidates.push(
+    tryIpApi(ip).then((r) => {
+      if (r) return { ...r, service: "ip-api" as const };
+      throw new Error("ip-api empty");
+    })
+  );
+
+  candidates.push(
+    tryIpInfo(ip).then((r) => {
+      if (r) return { ...r, service: "ipinfo" as const };
+      throw new Error("ipinfo empty");
+    })
+  );
+
+  try {
+    const result = await Promise.any(candidates);
+    log(`${result.service} ok: ${result.city}`);
+    if (ipCache.size >= IP_CACHE_MAX) {
+      const oldest = ipCache.keys().next().value;
+      if (oldest) ipCache.delete(oldest);
     }
-    log(`gaode empty or failed: ${JSON.stringify(gaodeResult)}`);
+    ipCache.set(cacheKey, { data: result, ts: Date.now() });
+    return result;
+  } catch {
+    log("all ip locate methods failed");
+    return null;
   }
-
-  // 2. ip-api
-  const ipApiResult = await tryIpApi(ip);
-  if (ipApiResult) {
-    log(`ip-api ok: ${ipApiResult.rawCity}`);
-    return { ...ipApiResult, service: "ip-api" };
-  }
-  log("ip-api empty or failed");
-
-  // 3. ipinfo.io
-  const ipInfoResult = await tryIpInfo(ip);
-  if (ipInfoResult) {
-    log(`ipinfo ok: ${ipInfoResult.rawCity}`);
-    return { ...ipInfoResult, service: "ipinfo" };
-  }
-  log("ipinfo empty or failed");
-
-  return null;
 }
 
 export async function GET(request: NextRequest) {

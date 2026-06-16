@@ -44,9 +44,13 @@ export async function gaodeReverseGeocode(
     const text = await res.text();
     const data = safeJsonParse<GaodeRegeoResult>(text);
     if (data?.status === "1" && data.regeocode) {
-      const city = data.regeocode.addressComponent.city;
+      const rawCity = data.regeocode.addressComponent.city;
+      const city = Array.isArray(rawCity)
+        ? rawCity.length > 0 ? String(rawCity[0]) : ""
+        : String(rawCity || "");
+      if (!city) return null;
       return {
-        city: String(Array.isArray(city) ? city[0] || "" : city),
+        city,
         province: String(data.regeocode.addressComponent.province || ""),
       };
     }
@@ -72,11 +76,14 @@ export async function gaodeIpLocate(
     const text = await res.text();
     const data = safeJsonParse<GaodeIpResult>(text);
     if (data?.status === "1" && data.city) {
-      const city = Array.isArray(data.city) ? data.city[0] || "" : data.city;
+      const rawCity = Array.isArray(data.city)
+        ? data.city.length > 0 ? String(data.city[0]) : ""
+        : String(data.city);
+      if (!rawCity) return null;
       const province = Array.isArray(data.province)
-        ? data.province[0] || ""
-        : data.province || "";
-      return { city: String(city), province: String(province) };
+        ? data.province.length > 0 ? String(data.province[0]) : ""
+        : String(data.province || "");
+      return { city: rawCity, province };
     }
   } catch {
     /* 静默失败，由调用方兜底 */

@@ -21,6 +21,7 @@ interface AppContextType {
   showLocationPrompt: boolean;
   dismissLocationPrompt: () => void;
   syncRouteCity: (slug: string) => void;
+  isLocating: boolean;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -36,6 +37,7 @@ export function AppContextProvider({ children }: { children: React.ReactNode }) 
   const [unreadNotifCount, setUnreadNotifCount] = useState(0);
   const [currentCity, setCurrentCity] = useState(DEFAULT_CITY_SLUG);
   const [isLoadingFavorites, setIsLoadingFavorites] = useState(true);
+  const [isLocating, setIsLocating] = useState(false);
   const syncInProgressRef = useRef(false);
 
   // 定位气泡推荐状态
@@ -111,6 +113,7 @@ export function AppContextProvider({ children }: { children: React.ReactNode }) 
 
   // 重新根据客户端 IP 定位一次（用于「重新定位」入口，保留用户主动要求强跳转行为）
   const relocalize = useCallback(async () => {
+    setIsLocating(true);
     try {
       const res = await fetch("/api/locate?source=auto");
       const data = await res.json();
@@ -122,21 +125,27 @@ export function AppContextProvider({ children }: { children: React.ReactNode }) 
       }
     } catch {
       /* 忽略错误 */
+    } finally {
+      setIsLocating(false);
     }
-    persistCity(DEFAULT_CITY_SLUG);
-    router.replace(`/${DEFAULT_CITY_SLUG}`);
+    showToast("定位失败，请手动选择城市", "error");
   }, [persistCity, router]);
 
   // 页面加载或切换路由时，同步当前路由中的实际城市名
   const syncRouteCity = useCallback((slug: string) => {
-    setCurrentCity(slug.toLowerCase());
+    const lower = slug.toLowerCase();
+    setCurrentCity(lower);
+    try {
+      localStorage.setItem("restored_current_city_v1", lower);
+    } catch { /* ignore */ }
+    document.cookie = `city_slug=${lower}; path=/; max-age=31536000`;
   }, []);
 
-  // 气泡忽略处理
+  // 气泡忽略处理（7 天过期）
   const dismissLocationPrompt = useCallback(() => {
     setIsPromptDismissed(true);
     try {
-      localStorage.setItem("restored_location_prompt_dismissed_v1", "true");
+      localStorage.setItem("restored_location_prompt_dismissed_v1", String(Date.now()));
     } catch {}
   }, []);
 
@@ -159,10 +168,14 @@ export function AppContextProvider({ children }: { children: React.ReactNode }) 
       })
       .catch(() => {});
 
-    // 初始化气泡忽略记录
+    // 初始化气泡忽略记录（7 天内有效）
     try {
-      const storedDismissed = localStorage.getItem("restored_location_prompt_dismissed_v1") === "true";
-      setIsPromptDismissed(storedDismissed);
+      const stored = localStorage.getItem("restored_location_prompt_dismissed_v1");
+      if (stored) {
+        const ts = Number(stored);
+        const sevenDays = 7 * 24 * 60 * 60 * 1000;
+        setIsPromptDismissed(!isNaN(ts) && Date.now() - ts < sevenDays);
+      }
     } catch {}
 
     // 初始化城市同步与国内 IP 智能定位
@@ -173,7 +186,7 @@ export function AppContextProvider({ children }: { children: React.ReactNode }) 
         setCurrentCity(slug);
         document.cookie = `city_slug=${slug}; path=/; max-age=31536000`;
       } else {
-        // 首次进入的新用户：在后台默默监听 IP 定位，不做强制跳转！
+        setIsLocating(true);
         fetch("/api/locate?source=auto")
           .then((res) => res.json())
           .then((data) => {
@@ -182,7 +195,8 @@ export function AppContextProvider({ children }: { children: React.ReactNode }) 
               setSuggestedCity({ slug: data.slug, name: locatedCityZh });
             }
           })
-          .catch(() => {});
+          .catch(() => {})
+          .finally(() => setIsLocating(false));
       }
     } catch {
       setCurrentCity(DEFAULT_CITY_SLUG);
@@ -238,6 +252,7 @@ export function AppContextProvider({ children }: { children: React.ReactNode }) 
         showLocationPrompt,
         dismissLocationPrompt,
         syncRouteCity,
+        isLocating,
       }}
     >
       {children}
