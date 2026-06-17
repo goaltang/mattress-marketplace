@@ -1,4 +1,4 @@
-import { NextResponse, type NextRequest } from "next/server";
+import { type NextRequest } from "next/server";
 import { updateSession } from "@/utils/supabase/middleware";
 
 const DEVICE_ID_COOKIE = "device_id";
@@ -14,15 +14,6 @@ export async function middleware(request: NextRequest) {
       maxAge: 60 * 60 * 24 * 365,
       path: "/",
     });
-  }
-
-  const { pathname } = request.nextUrl;
-
-  if (pathname === "/") {
-    const citySlug = request.cookies.get("city_slug")?.value;
-    if (citySlug) {
-      return NextResponse.redirect(new URL(`/${citySlug}`, request.url));
-    }
   }
 
   return supabaseResponse;

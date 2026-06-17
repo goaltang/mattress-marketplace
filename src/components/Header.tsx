@@ -69,7 +69,7 @@ function HeaderContent({
       <div className="max-w-[1200px] mx-auto h-full px-5 md:px-6 flex justify-between items-center">
         <div className="flex items-center gap-10">
           <Link
-            href={`/${currentCity.toLowerCase()}`}
+            href="/"
             className="font-headline font-bold text-2xl tracking-tight text-black dark:text-white hover:opacity-80 transition-opacity text-left cursor-pointer"
             style={{ fontFamily: '"Plus Jakarta Sans", sans-serif' }}
             aria-label="Restored 首页"

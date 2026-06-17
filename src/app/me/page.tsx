@@ -163,7 +163,7 @@ function MeProfileContent() {
       </main>
 
       {/* 页脚 */}
-      <Footer currentCity={currentCity} />
+      <Footer />
 
       {/* 城市选择 Modal */}
       {showCityModal && (

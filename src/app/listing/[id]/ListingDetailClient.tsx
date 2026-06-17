@@ -22,6 +22,7 @@ export default function ListingDetailClient({ listingId, initialListing }: Listi
     unreadNotifCount,
     currentCity,
     changeCity,
+    syncRouteCity,
   } = useAppContext();
 
   // 状态维护（如果服务端没获取到，客户端可以通过 useEffect 去 localStorage 尝试加载）
@@ -47,6 +48,12 @@ export default function ListingDetailClient({ listingId, initialListing }: Listi
     }
     setIsClientLoaded(true);
   }, [initialListing, listingId]);
+
+  useEffect(() => {
+    if (listing?.city) {
+      syncRouteCity(listing.city);
+    }
+  }, [listing?.city, syncRouteCity]);
 
   const handleCityChange = (newCitySlug: string) => {
     setShowCityModal(false);
@@ -113,7 +120,7 @@ export default function ListingDetailClient({ listingId, initialListing }: Listi
       </main>
 
       {/* 页脚 */}
-      <Footer currentCity={currentCity} />
+      <Footer />
 
       {/* 城市选择 Modal */}
       {showCityModal && (
