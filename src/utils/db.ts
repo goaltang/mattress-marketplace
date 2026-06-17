@@ -46,8 +46,10 @@ export async function getListings(city?: string): Promise<MattressListing[]> {
         query = query.ilike("city", city);
       }
 
-      // TODO: 取消注释下行，在 Supabase 添加 isActive 布尔列后恢复过滤
-      // query = query.or('"isActive".is.null,"isActive".eq.true');
+      // 仅返回上架商品；isActive 列需已通过 migration 建立
+      // （见 supabase/migrations/20260617000001_add_listings_missing_columns.sql）
+      // 若该列不存在，PostgREST 会报错并被下方 catch 捕获，降级到默认数据
+      query = query.or('"isActive".is.null,"isActive".eq.true');
 
       const { data, error } = await withTimeout(
         query.order("createdAt", { ascending: false }),
