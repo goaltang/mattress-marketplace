@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
+import Image from "next/image";
 import { MattressListing } from "../types";
 import {
   Package,
@@ -272,16 +273,16 @@ export default function MyListingsView({ onCardClick }: MyListingsViewProps) {
               >
                 <div className="flex flex-col md:flex-row gap-5">
                   <div
-                    className="w-full md:w-32 h-32 md:h-24 rounded-xl overflow-hidden bg-gray-100 shrink-0 cursor-pointer"
+                    className="w-full md:w-32 h-32 md:h-24 rounded-xl overflow-hidden bg-gray-100 shrink-0 cursor-pointer relative"
                     onClick={() => onCardClick(listing.id)}
                   >
-                    <img
+                    <Image
                       src={listing.images[0]}
                       alt={listing.title}
-                      className="w-full h-full object-cover"
+                      fill
+                      sizes="(max-width: 768px) 100vw, 128px"
+                      className="object-cover"
                       referrerPolicy="no-referrer"
-                      loading="lazy"
-                      decoding="async"
                     />
                   </div>
 
@@ -413,10 +414,12 @@ export default function MyListingsView({ onCardClick }: MyListingsViewProps) {
                 <div className="grid grid-cols-5 gap-2">
                   {editForm.images.map((img, idx) => (
                     <div key={idx} className="aspect-square rounded-lg overflow-hidden bg-gray-100 relative group">
-                      <img
+                      <Image
                         src={img}
                         alt={`img-${idx}`}
-                        className="w-full h-full object-cover"
+                        fill
+                        sizes="120px"
+                        className="object-cover"
                         referrerPolicy="no-referrer"
                       />
                       <button

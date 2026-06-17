@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import Image from "next/image";
 import { MattressListing } from "../types";
 import {
   ChevronLeft,
@@ -140,12 +141,14 @@ export default function ListingDetail({
         {/* 画廊相册 */}
         <div className="lg:col-span-7 flex flex-col gap-4">
           <div className="w-full aspect-[4/3] md:aspect-square bg-gray-50 rounded-2xl overflow-hidden relative shadow-sm border border-gray-100">
-            <img
+            <Image
               src={listing.images[activeImageIndex]}
               alt={listing.title}
-              className="w-full h-full object-cover transition-transform duration-500 hover:scale-105"
+              fill
+              priority
+              sizes="(max-width: 1024px) 100vw, 60vw"
+              className="object-cover transition-transform duration-500 hover:scale-105"
               referrerPolicy="no-referrer"
-              fetchPriority="high"
             />
           </div>
 
@@ -155,19 +158,19 @@ export default function ListingDetail({
                 <button
                   key={idx}
                   onClick={() => setActiveImageIndex(idx)}
-                  className={`w-20 h-20 flex-shrink-0 rounded-xl overflow-hidden snap-start cursor-pointer transition-all border-2 ${
+                  className={`w-20 h-20 flex-shrink-0 rounded-xl overflow-hidden snap-start cursor-pointer transition-all border-2 relative ${
                     activeImageIndex === idx
                       ? "border-black opacity-100 scale-[1.03] shadow-sm"
                       : "border-transparent opacity-70 hover:opacity-100"
                   }`}
                 >
-                  <img
+                  <Image
                     src={img}
                     alt={`Thumbnail ${idx}`}
-                    className="w-full h-full object-cover"
+                    fill
+                    sizes="80px"
+                    className="object-cover"
                     referrerPolicy="no-referrer"
-                    loading="lazy"
-                    decoding="async"
                   />
                 </button>
               ))}

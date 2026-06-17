@@ -46,7 +46,8 @@ export async function getListings(city?: string): Promise<MattressListing[]> {
         query = query.ilike("city", city);
       }
 
-      query = query.or('"isActive".is.null,"isActive".eq.true');
+      // TODO: 取消注释下行，在 Supabase 添加 isActive 布尔列后恢复过滤
+      // query = query.or('"isActive".is.null,"isActive".eq.true');
 
       const { data, error } = await withTimeout(
         query.order("createdAt", { ascending: false }),

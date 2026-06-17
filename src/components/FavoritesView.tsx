@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
+import Image from "next/image";
 import { MattressListing } from "../types";
 import { Heart, ArrowRight, Minimize2, MapPin, Layers, Loader2 } from "lucide-react";
 
@@ -100,13 +101,13 @@ export default function FavoritesView({
               >
                 {/* 图片 */}
                 <div className="aspect-[4/3] w-full overflow-hidden bg-gray-100 relative">
-                  <img
+                  <Image
                     src={item.images[0]}
                     alt={item.title}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-in-out"
+                    fill
+                    sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                    className="object-cover group-hover:scale-105 transition-transform duration-700 ease-in-out"
                     referrerPolicy="no-referrer"
-                    loading="lazy"
-                    decoding="async"
                   />
 
                   <button

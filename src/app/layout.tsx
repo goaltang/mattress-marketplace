@@ -1,7 +1,29 @@
 import type { Metadata } from "next";
+import { Inter, Plus_Jakarta_Sans, JetBrains_Mono } from "next/font/google";
 import { AppContextProvider } from "@/context/AppContext";
 import Toast from "@/components/Toast";
 import "./globals.css";
+
+const inter = Inter({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-inter",
+  display: "swap",
+});
+
+const plusJakartaSans = Plus_Jakarta_Sans({
+  subsets: ["latin"],
+  weight: ["500", "700", "800"],
+  variable: "--font-plus-jakarta-sans",
+  display: "swap",
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500"],
+  variable: "--font-jetbrains-mono",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "Restored — 优质二手床垫循环平台",
@@ -21,23 +43,26 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="zh-CN">
+    <html lang="zh-CN" suppressHydrationWarning>
       <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link
-          href="https://fonts.loli.net/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
-          rel="stylesheet"
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                try {
+                  var theme = localStorage.getItem('restored_theme');
+                  if (theme === 'dark' || (!theme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                    document.documentElement.classList.add('dark');
+                  }
+                } catch(e) {}
+              })();
+            `,
+          }}
         />
-        <style dangerouslySetInnerHTML={{ __html: `
-          :root {
-            --font-inter: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            --font-plus-jakarta-sans: 'Plus Jakarta Sans', var(--font-inter);
-            --font-jetbrains-mono: 'JetBrains Mono', 'Fira Code', monospace;
-          }
-        `}} />
       </head>
-      <body className="antialiased">
+      <body
+        className={`antialiased bg-white dark:bg-neutral-950 text-black dark:text-white ${inter.variable} ${plusJakartaSans.variable} ${jetbrainsMono.variable}`}
+      >
         <AppContextProvider>
           {children}
           <Toast />
@@ -46,4 +71,3 @@ export default function RootLayout({
     </html>
   );
 }
-

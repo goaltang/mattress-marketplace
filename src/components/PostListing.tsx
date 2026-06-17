@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useRef } from "react";
+import Image from "next/image";
 import { MattressListing, MattressSize, MattressMaterial, MattressCondition, DeliveryType } from "../types";
 import { Camera, Plus, MapPin, Search, Check, Sparkles, Loader2, AlertCircle, X } from "lucide-react";
 import { uploadMultipleImages, validateFiles, UploadProgress, MAX_IMAGE_COUNT } from "@/utils/upload";
@@ -195,10 +196,12 @@ export default function PostListing({ onPublish, currentCity }: PostListingProps
             >
               {uploadedImages[0] ? (
                 <>
-                  <img
+                  <Image
                     src={uploadedImages[0]}
                     alt="Cover"
-                    className="w-full h-full object-cover"
+                    fill
+                    sizes="(max-width: 768px) 100vw, 600px"
+                    className="object-cover"
                     referrerPolicy="no-referrer"
                   />
                   <button
@@ -248,10 +251,12 @@ export default function PostListing({ onPublish, currentCity }: PostListingProps
                 >
                   {image ? (
                     <>
-                      <img
+                      <Image
                         src={image}
                         alt={`Detail ${slotIdx}`}
-                        className="w-full h-full object-cover"
+                        fill
+                        sizes="(max-width: 768px) 50vw, 300px"
+                        className="object-cover"
                         referrerPolicy="no-referrer"
                       />
                       <button
@@ -617,13 +622,13 @@ export default function PostListing({ onPublish, currentCity }: PostListingProps
           </p>
 
           <div className="relative w-full h-64 rounded-2xl overflow-hidden border border-gray-100 select-none">
-            <img
+            <Image
               src={mapPlaceholderUrl}
               alt="Map Background"
-              className="w-full h-full object-cover opacity-85"
+              fill
+              sizes="(max-width: 768px) 100vw, 800px"
+              className="object-cover opacity-85"
               referrerPolicy="no-referrer"
-              loading="lazy"
-              decoding="async"
             />
 
             <div className="absolute top-4 left-4 right-4 flex gap-2">
@@ -639,9 +644,21 @@ export default function PostListing({ onPublish, currentCity }: PostListingProps
               </div>
               <button
                 type="button"
-                onClick={() => {
-                  setLocationSearch("下沙 龙湖天街 / 沿江生活区");
-                  alert("定位成功：下沙 龙湖天街 / 沿江生活区");
+                onClick={async () => {
+                  try {
+                    const res = await fetch("/api/locate");
+                    const data = await res.json();
+                    if (data?.success && data.city) {
+                      const { resolveCitySlug, getCityName } = await import("@/context/AppContext");
+                      const slug = resolveCitySlug(data.city);
+                      if (slug) {
+                        const cityName = getCityName(slug) || data.city;
+                        setLocationSearch(`${cityName}市（基于IP定位）`);
+                        return;
+                      }
+                    }
+                  } catch {}
+                  setLocationSearch(currentCity);
                 }}
                 className="bg-black text-white px-4 py-2.5 rounded-lg font-semibold text-[13px] flex items-center justify-center cursor-pointer shadow hover:bg-neutral-800 transition-all active:scale-95 border-0"
               >
